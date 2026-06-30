@@ -141,6 +141,7 @@ const SERVICE_DEFINITIONS = [
 		group: GROUP.GOOGLE,
 		defaultMember: GROUP.SELECTION,
 		proxyOnly: true,
+		geositeProxy: ["google"],
 		domainSuffixes: [
 			"google.com",
 			"googleapis.com",
@@ -157,6 +158,7 @@ const SERVICE_DEFINITIONS = [
 	{
 		group: GROUP.YOUTUBE,
 		defaultMember: GROUP.SELECTION,
+		geositeProxy: ["youtube"],
 		ruleSets: ["youtube"],
 	},
 	{
@@ -544,6 +546,9 @@ function buildRules() {
 		for (const process of service.processNames || []) {
 			rules.push(`PROCESS-NAME,${process},${service.group}`);
 		}
+		for (const geosite of service.geositeProxy || []) {
+			rules.push(`GEOSITE,${geosite},${service.group}`);
+		}
 		for (const suffix of service.directDomainSuffixes || []) {
 			rules.push(`DOMAIN-SUFFIX,${suffix},DIRECT`);
 		}
@@ -593,6 +598,80 @@ function ensureRelayProxy(config) {
 	config.proxies = [...proxies, relayProxy];
 }
 
+function ensureDns(config) {
+	// Requires Clash Party sidebar toggle: DNS Override (DNS 覆写)
+	const foreignDns = [
+		"https://1.1.1.1/dns-query",
+		"https://8.8.8.8/dns-query",
+		"https://dns.google/dns-query",
+	];
+
+	const googleDnsPolicy = {
+		"geosite:google": foreignDns,
+		"geosite:youtube": foreignDns,
+		"geosite:geolocation-!cn": foreignDns,
+		"geosite:gfw": foreignDns,
+		"+.google.com": foreignDns,
+		"+.googleapis.com": foreignDns,
+		"+.gstatic.com": foreignDns,
+		"+.googlevideo.com": foreignDns,
+		"+.googleusercontent.com": foreignDns,
+		"+.1e100.net": foreignDns,
+		"+.ggpht.com": foreignDns,
+		"+.gvt1.com": foreignDns,
+		"+.gvt2.com": foreignDns,
+	};
+
+	config.dns = {
+		enable: true,
+		ipv6: false,
+		"enhanced-mode": "fake-ip",
+		...config.dns,
+		"default-nameserver": config.dns?.["default-nameserver"] || [
+			"8.8.8.8",
+			"1.1.1.1",
+		],
+		nameserver: config.dns?.nameserver || [
+			"https://doh.pub/dns-query",
+			"https://dns.alidns.com/dns-query",
+		],
+		fallback: foreignDns,
+		"fallback-filter": {
+			geoip: true,
+			"geoip-code": "CN",
+			geosite: ["gfw"],
+			...(config.dns?.["fallback-filter"] || {}),
+		},
+		"nameserver-policy": {
+			...(config.dns?.["nameserver-policy"] || {}),
+			...googleDnsPolicy,
+		},
+		"fake-ip-filter": uniqueList([
+			"*.lan",
+			"localhost",
+			"*.local",
+			...(config.dns?.["fake-ip-filter"] || []),
+		]),
+	};
+}
+
+function ensureSniffer(config) {
+	// Requires Clash Party sidebar toggle: Override connection address (嗅探覆写)
+	config.sniffer = {
+		enable: true,
+		"parse-pure-ip": true,
+		"override-destination": true,
+		"force-dns-mapping": true,
+		...config.sniffer,
+		sniff: {
+			HTTP: { ports: [80, "8080-8880"] },
+			TLS: { ports: [443, 8443] },
+			QUIC: { ports: [443] },
+			...(config.sniffer?.sniff || {}),
+		},
+	};
+}
+
 function ensureRuntimeDefaults(config) {
 	config.mode = "rule";
 
@@ -601,18 +680,8 @@ function ensureRuntimeDefaults(config) {
 	}
 	config.profile["store-selected"] = true;
 
-	if (config.dns) {
-		return;
-	}
-
-	config.dns = {
-		enable: true,
-		ipv6: false,
-		"enhanced-mode": "fake-ip",
-		nameserver: ["https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"],
-		fallback: ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"],
-		"fallback-filter": { geoip: true, "geoip-code": "CN" },
-	};
+	ensureDns(config);
+	ensureSniffer(config);
 }
 
 function main(config) {

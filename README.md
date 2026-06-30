@@ -37,6 +37,19 @@ See also: [Clash Party JavaScript override docs](https://clashparty.org/docs/gui
 2. Confirm **Mode** is set to **Rule**.
 3. Open **Proxy groups** — you should see groups like **🌍 GLOBAL**, **🤖 AI**, **💼 LinkedIn**, etc.
 
+### 4. Enable sidebar overrides
+
+The script configures DNS and sniffer settings in the merged config, but Clash Party applies them only when the matching sidebar toggles are **ON**:
+
+| Sidebar toggle | Chinese UI | Why |
+|----------------|------------|-----|
+| **DNS Override** | DNS 覆写 | Uses foreign DNS for Google/GFW domains so they resolve to real IPs instead of polluted China addresses. |
+| **Override connection address** | 嗅探覆写 | Uses TLS/QUIC sniffing to detect the real domain on IP-only connections and route them to the correct proxy group (e.g. Google → **🔍 Google** instead of **DIRECT**). |
+
+With **TUN** (虚拟网卡) enabled, **Override connection address** is especially important — without it, sites like Google can connect to polluted IPs and bypass the proxy even when domain rules are correct.
+
+After toggling these on, refresh the subscription once more if routing still looks wrong.
+
 ## Usage tips
 
 - **🌍 GLOBAL** — default route for general proxy traffic (`MATCH`, GFW, etc.).
@@ -62,3 +75,4 @@ Open [`clash-rewrite.js`](clash-rewrite.js) and adjust:
 - **Override error / red profile** — check the Clash Party log; the script throws if the subscription has no proxies.
 - **Loop detected in ProxyGroup** — should not happen with the current script; refresh after updating to the latest version.
 - **Service not proxying** — set that service’s group to **⚡ AUTO** or **🚀 NODES** in the proxy panel.
+- **Google or other sites go DIRECT / don’t load in Chrome** — enable **DNS Override** and **Override connection address** in the sidebar (see step 4). In **Connections**, filter by the site name: traffic should hit the service group (e.g. **🔍 Google**), not **DIRECT** to a China IP. If proxied connections show 0 B download, try a different node in **🚀 NODES** (e.g. `trojan` or `hysteria2`).
