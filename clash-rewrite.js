@@ -119,8 +119,8 @@ const directDomainSuffixes = [
 const SERVICE_DEFINITIONS = [
 	{
 		group: GROUP.AI,
-		defaultMember: GROUP.SELECTION,
-		alternateMembers: [GROUP.AI_ROUTE],
+		defaultMember: GROUP.AI_ROUTE,
+		alternateMembers: [GROUP.SELECTION],
 		ruleSets: ["openai", "claude", "gemini"],
 		domainSuffixes: aiDomainSuffixes,
 	},
@@ -458,7 +458,9 @@ function buildProxyGroups(nodePool) {
 	const regionalNames = regionalGroups.map(({ name }) => name);
 	const selectionMembers = buildSelectionMembers(regionalNames);
 	const aiFallbackMembers =
-		regionalNames.length > 0 ? regionalNames : [GROUP.SELECTION];
+		regionalNames.length > 0
+			? regionalNames
+			: [GROUP.AUTO, GROUP.NODES];
 
 	const groups = [
 		{
@@ -490,7 +492,7 @@ function buildProxyGroups(nodePool) {
 			name: GROUP.AI_FALLBACK,
 			type: "url-test",
 			proxies: aiFallbackMembers,
-			url: "https://api.openai.com/",
+			url: "http://www.gstatic.com/generate_204",
 			interval: 300,
 			tolerance: 50,
 			hidden: true,
@@ -499,8 +501,9 @@ function buildProxyGroups(nodePool) {
 			name: GROUP.AI_ROUTE,
 			type: "fallback",
 			proxies: ["US-RELAY", GROUP.AI_FALLBACK],
-			url: "https://api.openai.com/",
+			url: "http://www.gstatic.com/generate_204",
 			interval: 300,
+			lazy: true,
 			hidden: true,
 		},
 	];
