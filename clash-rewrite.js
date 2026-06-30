@@ -13,6 +13,7 @@ const PROXY_SSH = false;
 // Clash Party binds the tray / proxy UI to a group named GLOBAL.
 const GROUP = {
 	GLOBAL: "🌍 GLOBAL",
+	SELECTION: "🎯 Selection",
 	NODES: "🚀 NODES",
 	AUTO: "⚡ AUTO",
 	AI_ROUTE: "🛰 AI-ROUTE",
@@ -114,59 +115,73 @@ const directDomainSuffixes = [
 	"zijieapi.com",
 ];
 
-// Service groups shown in the UI; each can be switched independently.
+// Service groups default to SELECTION; change SELECTION once to steer all of them.
 const SERVICE_DEFINITIONS = [
 	{
 		group: GROUP.AI,
-		defaultMember: GROUP.AI_ROUTE,
+		defaultMember: GROUP.SELECTION,
+		alternateMembers: [GROUP.AI_ROUTE],
 		ruleSets: ["openai", "claude", "gemini"],
 		domainSuffixes: aiDomainSuffixes,
 	},
 	{
 		group: GROUP.MICROSOFT,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["microsoft"],
 	},
 	{
 		group: GROUP.STEAM,
-		defaultMember: "DIRECT",
+		defaultMember: GROUP.SELECTION,
+		alternateMembers: ["DIRECT"],
 		ruleSets: ["steam"],
 		directRuleSets: ["steamcn"],
 		geositeDirect: ["steam@cn"],
 	},
 	{
 		group: GROUP.GOOGLE,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
+		proxyOnly: true,
+		domainSuffixes: [
+			"google.com",
+			"googleapis.com",
+			"gstatic.com",
+			"googlevideo.com",
+			"googleusercontent.com",
+			"ggpht.com",
+			"gvt1.com",
+			"gvt2.com",
+			"1e100.net",
+		],
 		ruleSets: ["google"],
 	},
 	{
 		group: GROUP.YOUTUBE,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["youtube"],
 	},
 	{
 		group: GROUP.TELEGRAM,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["telegram"],
 	},
 	{
 		group: GROUP.NETFLIX,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["netflix"],
 	},
 	{
 		group: GROUP.SLACK,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["slack"],
 	},
 	{
 		group: GROUP.SOCIAL,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		ruleSets: ["twitter"],
 	},
 	{
 		group: GROUP.LINKEDIN,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		proxyOnly: true,
 		processNames: ["LinkedIn"],
 		domainSuffixes: [
@@ -181,12 +196,13 @@ const SERVICE_DEFINITIONS = [
 	},
 	{
 		group: GROUP.DEVELOPER,
-		defaultMember: GROUP.AUTO,
+		defaultMember: GROUP.SELECTION,
 		domainSuffixes: devDomainSuffixes,
 	},
 	{
 		group: GROUP.ZOOM,
-		defaultMember: "DIRECT",
+		defaultMember: GROUP.SELECTION,
+		alternateMembers: ["DIRECT"],
 		domainSuffixes: [
 			"zoom.us",
 			"zoomgov.us",
@@ -301,7 +317,6 @@ const ruleProviders = {
 	...loyalsoldierProvider("private", "private"),
 	...loyalsoldierProvider("icloud", "icloud"),
 	...loyalsoldierProvider("apple", "apple"),
-	...loyalsoldierProvider("google-cn", "google"),
 	...loyalsoldierProvider("proxy", "proxy"),
 	...loyalsoldierProvider("gfw", "gfw"),
 	...loyalsoldierProvider("cncidr", "cncidr", "ipcidr"),
@@ -410,16 +425,28 @@ function buildActiveRegionalGroups(nodePool) {
 	})).filter(({ proxies }) => proxies.length > 0);
 }
 
-function buildServiceGroup(name, defaultMember, regionalNames, proxyOnly = false) {
+function buildSelectionMembers(regionalNames) {
+	return uniqueList([GROUP.AUTO, GROUP.NODES, "DIRECT", ...regionalNames]);
+}
+
+function buildServiceGroup(service) {
+	const {
+		group,
+		defaultMember = GROUP.SELECTION,
+		proxyOnly = false,
+		alternateMembers = [],
+	} = service;
+
 	return {
-		name,
+		name: group,
 		type: "select",
 		proxies: uniqueList([
 			defaultMember,
-			GROUP.AUTO,
-			GROUP.NODES,
+			...(defaultMember !== GROUP.SELECTION ? [GROUP.SELECTION] : []),
+			...alternateMembers.filter(
+				(member) => member !== defaultMember && member !== GROUP.SELECTION,
+			),
 			...(proxyOnly ? [] : ["DIRECT"]),
-			...regionalNames,
 		]),
 	};
 }
@@ -427,23 +454,27 @@ function buildServiceGroup(name, defaultMember, regionalNames, proxyOnly = false
 function buildProxyGroups(nodePool) {
 	const regionalGroups = buildActiveRegionalGroups(nodePool);
 	const regionalNames = regionalGroups.map(({ name }) => name);
+	const selectionMembers = buildSelectionMembers(regionalNames);
 	const aiFallbackMembers =
-		regionalNames.length > 0 ? regionalNames : [GROUP.AUTO];
+		regionalNames.length > 0 ? regionalNames : [GROUP.SELECTION];
 
 	const groups = [
 		{
 			name: MAIN_POLICY,
 			type: "select",
-			proxies: uniqueList([GROUP.AUTO, GROUP.NODES, "DIRECT", ...regionalNames]),
+			proxies: [GROUP.SELECTION],
+		},
+		{
+			name: GROUP.SELECTION,
+			type: "select",
+			proxies: selectionMembers,
 		},
 		{
 			name: GROUP.NODES,
 			type: "select",
 			...memberField(nodePool),
 		},
-		...SERVICE_DEFINITIONS.map(({ group, defaultMember, proxyOnly }) =>
-			buildServiceGroup(group, defaultMember, regionalNames, proxyOnly),
-		),
+		...SERVICE_DEFINITIONS.map((service) => buildServiceGroup(service)),
 		{
 			name: GROUP.AUTO,
 			type: "url-test",
@@ -540,7 +571,6 @@ function buildRules() {
 		"RULE-SET,reject,REJECT",
 		"RULE-SET,icloud,DIRECT",
 		"RULE-SET,apple,DIRECT",
-		"RULE-SET,google-cn,DIRECT",
 		`RULE-SET,proxy,${MAIN_POLICY}`,
 		`RULE-SET,gfw,${MAIN_POLICY}`,
 		"RULE-SET,direct,DIRECT",
