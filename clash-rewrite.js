@@ -26,6 +26,7 @@ const GROUP = {
 	NETFLIX: "🎬 Netflix",
 	SLACK: "💬 Slack",
 	SOCIAL: "🐦 Social",
+	LINKEDIN: "💼 LinkedIn",
 	DEVELOPER: "👩‍💻 Developer",
 	ZOOM: "📹 Zoom",
 	US: "🇺🇸 US",
@@ -162,6 +163,21 @@ const SERVICE_DEFINITIONS = [
 		group: GROUP.SOCIAL,
 		defaultMember: GROUP.AUTO,
 		ruleSets: ["twitter"],
+	},
+	{
+		group: GROUP.LINKEDIN,
+		defaultMember: GROUP.AUTO,
+		proxyOnly: true,
+		processNames: ["LinkedIn"],
+		domainSuffixes: [
+			"linkedin.com",
+			"linkedin.cn",
+			"lnkd.in",
+			"licdn.com",
+			"licdn.cn",
+			"bizographics.com",
+		],
+		ruleSets: ["linkedin"],
 	},
 	{
 		group: GROUP.DEVELOPER,
@@ -304,6 +320,7 @@ const ruleProviders = {
 	...bm7Provider("Netflix"),
 	...bm7Provider("Slack"),
 	...bm7Provider("Twitter"),
+	...bm7Provider("LinkedIn"),
 };
 
 const GROUP_TYPES_WITH_MEMBERS = new Set([
@@ -393,7 +410,7 @@ function buildActiveRegionalGroups(nodePool) {
 	})).filter(({ proxies }) => proxies.length > 0);
 }
 
-function buildServiceGroup(name, defaultMember, regionalNames) {
+function buildServiceGroup(name, defaultMember, regionalNames, proxyOnly = false) {
 	return {
 		name,
 		type: "select",
@@ -401,7 +418,7 @@ function buildServiceGroup(name, defaultMember, regionalNames) {
 			defaultMember,
 			GROUP.AUTO,
 			GROUP.NODES,
-			"DIRECT",
+			...(proxyOnly ? [] : ["DIRECT"]),
 			...regionalNames,
 		]),
 	};
@@ -424,8 +441,8 @@ function buildProxyGroups(nodePool) {
 			type: "select",
 			...memberField(nodePool),
 		},
-		...SERVICE_DEFINITIONS.map(({ group, defaultMember }) =>
-			buildServiceGroup(group, defaultMember, regionalNames),
+		...SERVICE_DEFINITIONS.map(({ group, defaultMember, proxyOnly }) =>
+			buildServiceGroup(group, defaultMember, regionalNames, proxyOnly),
 		),
 		{
 			name: GROUP.AUTO,
@@ -493,6 +510,12 @@ function buildRules() {
 	}
 
 	for (const service of SERVICE_DEFINITIONS) {
+		for (const process of service.processNames || []) {
+			rules.push(`PROCESS-NAME,${process},${service.group}`);
+		}
+		for (const suffix of service.directDomainSuffixes || []) {
+			rules.push(`DOMAIN-SUFFIX,${suffix},DIRECT`);
+		}
 		for (const suffix of service.domainSuffixes || []) {
 			rules.push(`DOMAIN-SUFFIX,${suffix},${service.group}`);
 		}
