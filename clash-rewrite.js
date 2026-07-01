@@ -48,10 +48,18 @@ const GROUP = {
 
 const MAIN_POLICY = GROUP.GLOBAL;
 
-const LOYAL_BASE =
-	"https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release";
-const BM7_BASE =
-	"https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash";
+// Ruleset CDN — cdn.jsdelivr.net is often blocked in China.
+// Alternatives: https://fastly.jsdelivr.net/gh | https://cdn.jsdelivr.net/gh
+const RULESET_CDN = "https://cdn.jsdmirror.com/gh";
+// Download rulesets through a proxy when CDNs are unreachable (e.g. GROUP.AUTO).
+const RULESET_DOWNLOAD_PROXY = "";
+
+const LOYAL_BASE = `${RULESET_CDN}/Loyalsoldier/clash-rules@release`;
+const BM7_BASE = `${RULESET_CDN}//blackmatrix7/ios_rule_script@master/rule/Clash`;
+
+function ruleProviderExtras() {
+	return RULESET_DOWNLOAD_PROXY ? { proxy: RULESET_DOWNLOAD_PROXY } : {};
+}
 
 const relayProxy = {
 	name: "US-RELAY",
@@ -68,9 +76,11 @@ const loyalsoldierProvider = (key, file, behavior = "domain") => ({
 	[key]: {
 		type: "http",
 		behavior,
+		format: "yaml",
 		url: `${LOYAL_BASE}/${file}.txt`,
 		path: `./ruleset/loyal-${key}.yaml`,
 		interval: 86400,
+		...ruleProviderExtras(),
 	},
 });
 
@@ -82,6 +92,7 @@ const bm7Provider = (name) => ({
 		url: `${BM7_BASE}/${name}/${name}.yaml`,
 		path: `./ruleset/bm7-${name.toLowerCase()}.yaml`,
 		interval: 86400,
+		...ruleProviderExtras(),
 	},
 });
 
@@ -510,7 +521,7 @@ function buildProxyGroups(nodePool) {
 			proxies: ["US-RELAY", GROUP.AI_FALLBACK],
 			url: "http://www.gstatic.com/generate_204",
 			interval: 300,
-			lazy: true,
+			lazy: false,
 			hidden: true,
 		},
 	];
@@ -712,10 +723,7 @@ function main(config) {
 	ensureRuntimeDefaults(config);
 
 	config["proxy-groups"] = proxyGroups;
-	config["rule-providers"] = {
-		...(config["rule-providers"] || {}),
-		...ruleProviders,
-	};
+	config["rule-providers"] = ruleProviders;
 	config.rules = buildRules();
 
 	return config;
