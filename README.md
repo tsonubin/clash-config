@@ -2,7 +2,10 @@
 
 A [Clash Party](https://clashparty.org/) JavaScript override that turns any subscription into a China-friendly config with service-specific proxy groups (AI, LinkedIn, Zoom, Steam, etc.), automatic regional node grouping, and rules from [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script).
 
-The entry script is [`clash-rewrite.js`](clash-rewrite.js).
+The full rewrite entry script is [`clash-rewrite.js`](clash-rewrite.js).
+For a minimal override that only reroutes AI traffic through the AI relay and
+keeps the subscription's original groups, DNS, sniffer, and rules, use
+[`ai-reroute-only.js`](ai-reroute-only.js).
 
 ## Prerequisites
 

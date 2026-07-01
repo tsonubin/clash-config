@@ -129,8 +129,12 @@ const directDomainSuffixes = [
 
 const appleDomainSuffixes = [
 	"aaplimg.com",
+	"apple-cloudkit.com",
 	"apple.com",
+	"apple-dns.com",
+	"apple-dns.net",
 	"cdn-apple.com",
+	"itunes.com",
 	"itunes.apple.com",
 	"mzstatic.com",
 ];
@@ -140,6 +144,13 @@ const appleDomainKeywords = [
 	"itunes-apple.com",
 	"ls-apple.com.akadns.net",
 	"push-apple.com.akadns.net",
+];
+
+const appleMusicProcesses = [
+	"Music",
+	"AMPLibraryAgent",
+	"AMPArtworkAgent",
+	"itunescloudd",
 ];
 
 // Service groups default to SELECTION; change SELECTION once to steer all of them.
@@ -156,7 +167,7 @@ const SERVICE_DEFINITIONS = [
 		defaultMember: "DIRECT",
 		alternateMembers: [GROUP.SELECTION],
 		ruleSets: ["apple", "icloud"],
-		processNames: ["Music"],
+		processNames: appleMusicProcesses,
 		domainKeywords: appleDomainKeywords,
 		domainSuffixes: appleDomainSuffixes,
 	},
@@ -582,6 +593,10 @@ function buildRules() {
 		rules.push("PROCESS-NAME,ssh,DIRECT", "DST-PORT,22,DIRECT");
 	}
 
+	for (const process of appleMusicProcesses) {
+		rules.push(`AND,((PROCESS-NAME,${process}),(NETWORK,UDP),(DST-PORT,443)),REJECT`);
+	}
+
 	for (const service of SERVICE_DEFINITIONS) {
 		for (const process of service.processNames || []) {
 			rules.push(`PROCESS-NAME,${process},${service.group}`);
@@ -646,6 +661,30 @@ function ensureDns(config) {
 		"https://8.8.8.8/dns-query",
 		"https://dns.google/dns-query",
 	];
+	const localDns = config.dns?.nameserver || [
+		"https://doh.pub/dns-query",
+		"https://dns.alidns.com/dns-query",
+	];
+
+	const appleDnsPolicy = {
+		"+.aaplimg.com": localDns,
+		"+.apple-cloudkit.com": localDns,
+		"+.apple.com": localDns,
+		"+.apple.com.akadns.net": localDns,
+		"+.apple-dns.com": localDns,
+		"+.apple-dns.net": localDns,
+		"+.cdn-apple.com": localDns,
+		"+.icloud.com": localDns,
+		"+.edge-itunes-apple.com.akadns.net": localDns,
+		"+.itunes-apple.com": localDns,
+		"+.itunes-apple.com.akadns.net": localDns,
+		"+.itunes.com": localDns,
+		"+.lb-apple.com": localDns,
+		"+.lb-apple.com.akadns.net": localDns,
+		"+.music.apple.com": localDns,
+		"+.mzstatic.com": localDns,
+		"+.push-apple.com.akadns.net": localDns,
+	};
 
 	const googleDnsPolicy = {
 		"geosite:google": foreignDns,
@@ -685,6 +724,7 @@ function ensureDns(config) {
 		},
 		"nameserver-policy": {
 			...(config.dns?.["nameserver-policy"] || {}),
+			...appleDnsPolicy,
 			...googleDnsPolicy,
 		},
 		"fake-ip-filter": uniqueList([
