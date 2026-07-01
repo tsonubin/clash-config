@@ -127,6 +127,21 @@ const directDomainSuffixes = [
 	"zijieapi.com",
 ];
 
+const appleDomainSuffixes = [
+	"aaplimg.com",
+	"apple.com",
+	"cdn-apple.com",
+	"itunes.apple.com",
+	"mzstatic.com",
+];
+
+const appleDomainKeywords = [
+	"apple.com.akadns.net",
+	"itunes-apple.com",
+	"ls-apple.com.akadns.net",
+	"push-apple.com.akadns.net",
+];
+
 // Service groups default to SELECTION; change SELECTION once to steer all of them.
 const SERVICE_DEFINITIONS = [
 	{
@@ -137,15 +152,18 @@ const SERVICE_DEFINITIONS = [
 		domainSuffixes: aiDomainSuffixes,
 	},
 	{
-		group: GROUP.MICROSOFT,
-		defaultMember: GROUP.SELECTION,
-		ruleSets: ["microsoft"],
-	},
-	{
 		group: GROUP.APPLE,
 		defaultMember: "DIRECT",
 		alternateMembers: [GROUP.SELECTION],
 		ruleSets: ["apple", "icloud"],
+		processNames: ["Music"],
+		domainKeywords: appleDomainKeywords,
+		domainSuffixes: appleDomainSuffixes,
+	},
+	{
+		group: GROUP.MICROSOFT,
+		defaultMember: GROUP.SELECTION,
+		ruleSets: ["microsoft"],
 	},
 	{
 		group: GROUP.STEAM,
@@ -453,6 +471,7 @@ function buildServiceGroup(service) {
 	const {
 		group,
 		defaultMember = GROUP.SELECTION,
+		includeSelection = defaultMember !== GROUP.SELECTION,
 		proxyOnly = false,
 		alternateMembers = [],
 	} = service;
@@ -462,7 +481,7 @@ function buildServiceGroup(service) {
 		type: "select",
 		proxies: uniqueList([
 			defaultMember,
-			...(defaultMember !== GROUP.SELECTION ? [GROUP.SELECTION] : []),
+			...(includeSelection ? [GROUP.SELECTION] : []),
 			...alternateMembers.filter(
 				(member) => member !== defaultMember && member !== GROUP.SELECTION,
 			),
@@ -569,6 +588,9 @@ function buildRules() {
 		}
 		for (const geosite of service.geositeProxy || []) {
 			rules.push(`GEOSITE,${geosite},${service.group}`);
+		}
+		for (const keyword of service.domainKeywords || []) {
+			rules.push(`DOMAIN-KEYWORD,${keyword},${service.group}`);
 		}
 		for (const suffix of service.directDomainSuffixes || []) {
 			rules.push(`DOMAIN-SUFFIX,${suffix},DIRECT`);
