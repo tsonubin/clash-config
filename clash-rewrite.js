@@ -55,7 +55,8 @@ const RULESET_CDN = "https://cdn.jsdmirror.com/gh";
 const RULESET_DOWNLOAD_PROXY = "";
 
 const LOYAL_BASE = `${RULESET_CDN}/Loyalsoldier/clash-rules@release`;
-const BM7_BASE = `${RULESET_CDN}//blackmatrix7/ios_rule_script@master/rule/Clash`;
+// Single slash only — `gh//blackmatrix7` returns 400 from jsdmirror/jsDelivr.
+const BM7_BASE = `${RULESET_CDN}/blackmatrix7/ios_rule_script@master/rule/Clash`;
 
 function ruleProviderExtras() {
 	return RULESET_DOWNLOAD_PROXY ? { proxy: RULESET_DOWNLOAD_PROXY } : {};
@@ -219,8 +220,31 @@ const SERVICE_DEFINITIONS = [
 		ruleSets: ["netflix"],
 	},
 	{
+		// Huddles media runs on Amazon Chime (*.chime.aws / 99.77.128.0/18),
+		// which blackmatrix7's Slack ruleset does not cover. Without these,
+		// audio/video often hits MATCH→GLOBAL (or GEOIP,CN→DIRECT) and fails.
+		// Prefer a low-latency node with UDP, or DIRECT if chime.aws is reachable.
+		// See: https://slack.com/help/articles/36284146785427
 		group: GROUP.SLACK,
 		defaultMember: GROUP.SELECTION,
+		// macOS desktop process is "Slack Helper" (not "Slack") — confirmed in core logs.
+		// DOMAIN-SUFFIX fallbacks matter because:
+		// 1) bm7 Slack provider was 400'ing (broken URL), and
+		// 2) Loyalsoldier reject includes +.slackb.com — without an earlier match it REJECTs.
+		processNames: ["Slack", "Slack Helper"],
+		domainSuffixes: [
+			"slack.com",
+			"slack-edge.com",
+			"slack-files.com",
+			"slack-msgs.com",
+			"slack-imgs.com",
+			"slack-redir.net",
+			"slack-core.com",
+			"slackb.com",
+			"slackhq.com",
+			"chime.aws",
+		],
+		ipCidrs: ["99.77.128.0/18"],
 		ruleSets: ["slack"],
 	},
 	{
@@ -621,6 +645,9 @@ function buildRules() {
 		}
 		for (const ruleSet of service.ruleSets || []) {
 			rules.push(`RULE-SET,${ruleSet},${service.group}`);
+		}
+		for (const cidr of service.ipCidrs || []) {
+			rules.push(`IP-CIDR,${cidr},${service.group},no-resolve`);
 		}
 	}
 
