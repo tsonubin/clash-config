@@ -179,3 +179,9 @@ function main(config) {
 
 	return config;
 }
+
+// See the matching comment in clash-rewrite.js: keeps this pasteable as-is
+// into Clash Party's JS override editor while also being require()-able.
+if (typeof module !== "undefined" && module.exports) {
+	module.exports = { main };
+}

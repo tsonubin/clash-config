@@ -817,3 +817,11 @@ function main(config) {
 
 	return config;
 }
+
+// Guarded so this stays pasteable as-is into Clash Party's JS override editor,
+// which evaluates the script standalone and calls the global `main` — `module`
+// is undefined there, so this block is skipped. Node/Vercel `require()` picks
+// it up via `module.exports`.
+if (typeof module !== "undefined" && module.exports) {
+	module.exports = { main };
+}
