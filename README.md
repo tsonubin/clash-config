@@ -32,6 +32,24 @@ Note that QUIC-based protocols (hysteria2) allocate the same per-connection
 buffers in whichever core ultimately runs them; generating config server-side
 does not change core runtime behavior.
 
+### AI relay (optional)
+
+Setting `RELAY_HOST` / `RELAY_USERNAME` / `RELAY_PASSWORD` adds a `US-RELAY`
+SOCKS5 proxy and points the 🤖 AI group at it, giving AI services a stable US
+egress:
+
+- **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **↩ AI-FALLBACK**
+  (a `url-test` over the normal nodes) if the relay stops answering
+  healthchecks — so a dead relay degrades instead of black-holing AI traffic.
+- `US-RELAY` sets `dialer-proxy: ⚡ AUTO`, so it is reached *through* your own
+  nodes rather than from the client's raw network. The relay is deliberately
+  excluded from `⚡ AUTO`, otherwise that would loop.
+
+All three of host/username/password must be set; otherwise the relay and both
+AI-* groups are omitted and AI traffic uses the normal nodes. Credentials are
+read from the environment because the served config contains them in
+plaintext — which is what `SUBSCRIBE_TOKEN` guards.
+
 ### Deploy
 
 1. `vercel link` (or `vercel deploy` the first time) from this directory.
@@ -42,6 +60,8 @@ does not change core runtime behavior.
    - `SUBSCRIBE_TOKEN` — a shared secret required as `?token=` on the
      endpoint, so the deployed URL can't be scraped for your relay
      credentials by anyone who finds it (`openssl rand -hex 24`).
+   - `RELAY_HOST` / `RELAY_PORT` / `RELAY_USERNAME` / `RELAY_PASSWORD` —
+     optional SOCKS5 relay for AI egress (see below). Omit to disable.
 3. `vercel deploy --prod`.
 4. Subscribe your client to:
    `https://<your-project>.vercel.app/api/subscribe?token=<SUBSCRIBE_TOKEN>`

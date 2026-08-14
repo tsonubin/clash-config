@@ -38,6 +38,8 @@ export const GROUP = {
 	GLOBAL: "🌍 GLOBAL",
 	AUTO: "⚡ AUTO",
 	AI: "🤖 AI",
+	AI_ROUTE: "🛰 AI-ROUTE",
+	AI_FALLBACK: "↩ AI-FALLBACK",
 	GOOGLE: "🔍 Google",
 	YOUTUBE: "▶️ YouTube",
 	SOCIAL: "🐦 Social",
@@ -58,6 +60,37 @@ const LOYAL = `${CDN}/Loyalsoldier/clash-rules@release`;
 const BM7 = `${CDN}/blackmatrix7/ios_rule_script@master/rule/Clash`;
 
 const HEALTHCHECK_URL = "http://www.gstatic.com/generate_204";
+
+export const RELAY_NAME = "US-RELAY";
+
+// Upstream SOCKS5 relay used to give AI services a stable US egress. Read from
+// the environment rather than hardcoded, since the emitted config carries these
+// credentials in plaintext to every client. When unset, the relay is omitted
+// entirely and AI traffic simply uses the normal nodes.
+function buildRelayProxy(): Proxy | null {
+	const server = process.env.RELAY_HOST;
+	const username = process.env.RELAY_USERNAME;
+	const password = process.env.RELAY_PASSWORD;
+	if (!server || !username || !password) return null;
+
+	const port = Number(process.env.RELAY_PORT ?? 443);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) {
+		throw new Error(`Invalid RELAY_PORT: ${process.env.RELAY_PORT}`);
+	}
+
+	return {
+		name: RELAY_NAME,
+		type: "socks5",
+		server,
+		port,
+		username,
+		password,
+		"skip-cert-verify": true,
+		// Reach the relay *through* our own nodes rather than from the client's
+		// raw network. AUTO never contains the relay itself, so this cannot loop.
+		"dialer-proxy": GROUP.AUTO,
+	};
+}
 
 function loyalProvider(key: string, file: string, behavior: string): RuleProvider {
 	return {
@@ -168,7 +201,7 @@ function proxyNames(config: ClashConfig): string[] {
 		.filter((name): name is string => typeof name === "string" && name.length > 0);
 }
 
-function buildProxyGroups(nodes: string[]): ProxyGroup[] {
+function buildProxyGroups(nodes: string[], hasRelay: boolean): ProxyGroup[] {
 	// Shared tail: every service group can reach AUTO, GLOBAL, each individual
 	// node, or DIRECT — so any service can be steered without editing others.
 	const tail = [GROUP.AUTO, GROUP.GLOBAL, ...nodes, "DIRECT"];
@@ -190,8 +223,36 @@ function buildProxyGroups(nodes: string[]): ProxyGroup[] {
 		},
 	];
 
+	if (hasRelay) {
+		groups.push(
+			{
+				// Relay first; if it stops answering the healthcheck, traffic moves
+				// to the plain nodes instead of black-holing.
+				name: GROUP.AI_ROUTE,
+				type: "fallback",
+				proxies: [RELAY_NAME, GROUP.AI_FALLBACK],
+				url: HEALTHCHECK_URL,
+				interval: 300,
+				lazy: false,
+			},
+			{
+				name: GROUP.AI_FALLBACK,
+				type: "url-test",
+				proxies: nodes,
+				url: HEALTHCHECK_URL,
+				interval: 300,
+				tolerance: 50,
+				lazy: false,
+			},
+		);
+	}
+
 	for (const service of SERVICES) {
-		const head = service.head ?? [];
+		// The AI group leads with the relay route when one is configured.
+		const head =
+			service.group === GROUP.AI && hasRelay
+				? [GROUP.AI_ROUTE, ...(service.head ?? [])]
+				: (service.head ?? []);
 		groups.push({
 			name: service.group,
 			type: "select",
@@ -303,9 +364,20 @@ function dedupe(items: string[]): string[] {
 }
 
 export function rewrite(config: ClashConfig): ClashConfig {
-	const nodes = proxyNames(config);
+	// Computed before the relay is appended, so the relay never becomes a member
+	// of AUTO — which its own dialer-proxy points at.
+	const nodes = proxyNames(config).filter((name) => name !== RELAY_NAME);
 	if (nodes.length === 0) {
 		throw new Error("No proxies found in upstream subscription");
+	}
+
+	const relay = buildRelayProxy();
+	if (relay) {
+		const existing = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
+		config.proxies = [
+			...existing.filter((p) => p?.name !== RELAY_NAME),
+			relay,
+		];
 	}
 
 	config.mode = "rule";
@@ -315,7 +387,7 @@ export function rewrite(config: ClashConfig): ClashConfig {
 	config["external-controller"] = "127.0.0.1:9090";
 	config.profile = { "store-selected": true, "store-fake-ip": true };
 
-	config["proxy-groups"] = buildProxyGroups(nodes);
+	config["proxy-groups"] = buildProxyGroups(nodes, relay !== null);
 	config["rule-providers"] = buildRuleProviders();
 	config.rules = buildRules();
 
