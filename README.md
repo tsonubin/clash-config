@@ -1,43 +1,36 @@
 # clash-config
 
-A config generator that turns any subscription into a China-friendly config
-with service-specific proxy groups (AI, LinkedIn, Zoom, Steam, etc.),
-automatic regional node grouping, and rules from
+A config generator that turns a proxy subscription into a China-friendly
+Clash config with service-specific proxy groups (AI, Google, YouTube, Social,
+Telegram, Netflix, Slack, Microsoft, Apple, Developer) and rules from
 [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and
 [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script).
 
-The primary interface is a **Vercel-hosted subscription endpoint**
+The interface is a **Vercel-hosted subscription endpoint**
 ([`api/subscribe.ts`](api/subscribe.ts)): point any Clash-compatible client
-at the deployed URL and it gets the rewritten config directly. The original
-[Clash Party](https://clashparty.org/) JS-override scripts still exist under
-[`archive/`](archive/) — `api/subscribe.ts` runs them server-side, and
-they're still pasteable as-is into Clash Party's JS override editor if you
-prefer that workflow.
+at the deployed URL and it gets the rewritten config directly.
 
 ## Subscription service (Vercel)
 
-`api/subscribe.ts` fetches your upstream subscription and applies
-[`archive/clash-rewrite.js`](archive/clash-rewrite.js) (or
-[`archive/ai-reroute-only.js`](archive/ai-reroute-only.js) via
-`?variant=minimal`) server-side, so any Clash-compatible client — Clash
-Party, Clash Verge, sing-box, anything that can subscribe to a URL — gets the
-rewritten config directly, without needing JS-override support itself.
+[`api/subscribe.ts`](api/subscribe.ts) is the HTTP layer — auth, upstream
+fetch, YAML parse/dump. [`api/rewrite.ts`](api/rewrite.ts) holds all config
+generation: proxy groups, rules, rule providers, DNS and sniffer. **Change
+routing behavior there**, not in `archive/`.
 
-The HTTP layer is TypeScript; the rewrite logic itself stays plain JS in
-`archive/`, unchanged, and the API route `require()`s it directly — one
-implementation, not two to keep in sync.
+The generated config is **self-contained**. It carries its own `dns` and
+`sniffer` sections and does not rely on client-side override toggles (such as
+Clash Party's DNS Override / sniff override sidebar switches), so it works
+as-is in Stash, mihomo, and Clash Verge.
 
-**This does not fix two structural things:**
-1. DNS Override / sniff override are still Clash Party sidebar toggles that
-   gate whether *that app* applies the `dns`/`sniffer` sections regardless of
-   where the YAML was generated.
-2. QUIC-based protocols (hysteria2, tuic) still allocate the same
-   per-connection buffers in whichever core ultimately runs them — moving
-   the rewrite to a server doesn't change core runtime behavior.
+DNS is deliberately **remote-first, not China-first**: encrypted foreign
+resolvers are the default and China traffic is kept direct by *rules*. An
+earlier design used domestic resolvers as primary with a
+`fallback`/`fallback-filter` geoip-CN split, which only resolved on a mainland
+network — anywhere else every lookup hard-failed with `couldn't find ip`.
 
-What it does change: other clients can subscribe without an embedded JS
-engine, and the transform runs in a normal Node environment instead of Clash
-Party's sandboxed one.
+Note that QUIC-based protocols (hysteria2) allocate the same per-connection
+buffers in whichever core ultimately runs them; generating config server-side
+does not change core runtime behavior.
 
 ### Deploy
 
@@ -52,8 +45,6 @@ Party's sandboxed one.
 3. `vercel deploy --prod`.
 4. Subscribe your client to:
    `https://<your-project>.vercel.app/api/subscribe?token=<SUBSCRIBE_TOKEN>`
-   - Add `&variant=minimal` to use `ai-reroute-only.js` instead of the full
-     rewrite.
 
 ### Local development
 
@@ -63,11 +54,17 @@ npm run typecheck   # tsc --noEmit
 vercel dev          # requires the Vercel CLI; reads .env.local
 ```
 
-## Using the archived scripts directly in Clash Party
+## Archive
 
-If you'd rather paste the override straight into Clash Party instead of
-running the Vercel endpoint, the scripts in [`archive/`](archive/) still work
-standalone.
+[`archive/`](archive/) holds the original Clash Party JS-override scripts.
+They are **frozen and no longer used** — nothing imports them, and they are
+excluded from typechecking. They predate the Vercel endpoint, target a
+multi-region airport subscription rather than the current single-server
+topology, and require Clash Party's DNS Override / sniff override toggles to
+work at all. Kept for reference only; make changes in
+[`api/rewrite.ts`](api/rewrite.ts) instead.
+
+The instructions below describe that legacy workflow.
 
 ### Prerequisites
 

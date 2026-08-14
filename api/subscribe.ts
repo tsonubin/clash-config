@@ -1,10 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import yaml from "js-yaml";
-import { main as rewriteFull } from "../archive/clash-rewrite.js";
-import { main as rewriteMinimal } from "../archive/ai-reroute-only.js";
-
-type ClashConfig = Record<string, unknown>;
-type RewriteFn = (config: ClashConfig) => ClashConfig;
+import { rewrite, type ClashConfig } from "./rewrite.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -26,13 +22,10 @@ async function fetchUpstream(url: string): Promise<Response> {
 	}
 }
 
-// Runs clash-rewrite.js / ai-reroute-only.js server-side against an upstream
-// subscription so any Clash-compatible client can subscribe directly, without
-// needing Clash Party's JS override support specifically. This only moves
-// *where* the config transform runs — it does not change what Clash Party's
-// DNS Override / sniff override sidebar toggles do, and it does not change
-// core-level memory behavior (e.g. QUIC-based protocols like hysteria2/tuic
-// still allocate the same buffers in whichever client ultimately runs them).
+// Fetches the upstream subscription and rewrites it server-side, so any
+// Clash-compatible client (Stash, mihomo, Verge) can subscribe to the result
+// directly. The emitted config is self-contained: it carries its own DNS and
+// sniffer sections and does not depend on client-side override toggles.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const requiredToken = process.env.SUBSCRIBE_TOKEN;
 	const providedToken = firstQueryValue(req.query.token);
@@ -82,14 +75,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		return;
 	}
 
-	const variant = firstQueryValue(req.query.variant) === "minimal" ? "minimal" : "full";
-	const rewrite: RewriteFn = variant === "minimal" ? rewriteMinimal : rewriteFull;
-
 	let rewritten: ClashConfig;
 	try {
 		rewritten = rewrite(config);
 	} catch (err) {
-		res.status(500).send(`Override error: ${(err as Error).message}`);
+		res.status(500).send(`Rewrite error: ${(err as Error).message}`);
 		return;
 	}
 

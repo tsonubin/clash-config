@@ -14,5 +14,5 @@
 		"resolveJsonModule": true,
 		"noEmit": true
 	},
-	"include": ["api/**/*.ts", "archive/clash-rewrite.js", "archive/ai-reroute-only.js"]
+	"include": ["api/**/*.ts"]
 }
