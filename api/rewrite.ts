@@ -22,6 +22,7 @@ interface ProxyGroup {
 	url?: string;
 	interval?: number;
 	tolerance?: number;
+	timeout?: number;
 	lazy?: boolean;
 }
 
@@ -35,6 +36,7 @@ interface RuleProvider {
 }
 
 export const GROUP = {
+	MANUAL: "🚀 MANUAL",
 	GLOBAL: "🌍 GLOBAL",
 	AUTO: "⚡ AUTO",
 	AI: "🤖 AI",
@@ -59,7 +61,14 @@ const CDN = "https://cdn.jsdmirror.com/gh";
 const LOYAL = `${CDN}/Loyalsoldier/clash-rules@release`;
 const BM7 = `${CDN}/blackmatrix7/ios_rule_script@master/rule/Clash`;
 
-const HEALTHCHECK_URL = "http://www.gstatic.com/generate_204";
+const HEALTHCHECK_URL = "https://www.gstatic.com/generate_204";
+
+// This deployment serves straw. Keep its bootstrap independent of local DNS;
+// update these public addresses if the server moves. TLS names remain unchanged.
+const SERVER_HOSTS: Record<string, string> = {
+	"s.tsonubin.com": "192.243.126.66",
+	"sub.tsonubin.com": "192.243.126.66",
+};
 
 export const RELAY_NAME = "US-RELAY";
 
@@ -201,24 +210,25 @@ function proxyNames(config: ClashConfig): string[] {
 		.filter((name): name is string => typeof name === "string" && name.length > 0);
 }
 
-function buildProxyGroups(nodes: string[], hasRelay: boolean): ProxyGroup[] {
+function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: boolean): ProxyGroup[] {
 	// Shared tail: every service group can reach AUTO, GLOBAL, each individual
 	// node, or DIRECT — so any service can be steered without editing others.
-	const tail = [GROUP.AUTO, GROUP.GLOBAL, ...nodes, "DIRECT"];
+	const tail = [GROUP.AUTO, GROUP.MANUAL, GROUP.GLOBAL, ...nodes, "DIRECT"];
 
 	const groups: ProxyGroup[] = [
+		{ name: GROUP.MANUAL, type: "select", proxies: nodes },
 		{
 			name: GROUP.GLOBAL,
 			type: "select",
-			proxies: [GROUP.AUTO, ...nodes, "DIRECT"],
+			proxies: [GROUP.AUTO, GROUP.MANUAL, ...nodes, "DIRECT"],
 		},
 		{
 			name: GROUP.AUTO,
-			type: "url-test",
-			proxies: nodes,
+			type: "fallback",
+			proxies: automaticNodes,
 			url: HEALTHCHECK_URL,
-			interval: 300,
-			tolerance: 50,
+			interval: 60,
+			timeout: 5000,
 			lazy: false,
 		},
 	];
@@ -232,16 +242,16 @@ function buildProxyGroups(nodes: string[], hasRelay: boolean): ProxyGroup[] {
 				type: "fallback",
 				proxies: [RELAY_NAME, GROUP.AI_FALLBACK],
 				url: HEALTHCHECK_URL,
-				interval: 300,
+				interval: 60,
 				lazy: false,
 			},
 			{
 				name: GROUP.AI_FALLBACK,
-				type: "url-test",
-				proxies: nodes,
+				type: "fallback",
+				proxies: automaticNodes,
 				url: HEALTHCHECK_URL,
-				interval: 300,
-				tolerance: 50,
+				interval: 60,
+				timeout: 5000,
 				lazy: false,
 			},
 		);
@@ -308,28 +318,25 @@ function buildRules(): string[] {
 }
 
 function applyDns(config: ClashConfig): void {
-	// Remote-DNS-first, and deliberately not China-first.
-	//
-	// The previous design used domestic resolvers as primary with a
-	// fallback + fallback-filter geoip-CN split. That only resolved correctly on
-	// a mainland network; anywhere else the primaries were unreachable and every
-	// lookup hard-failed ("couldn't find ip") rather than degrading. Encrypted
-	// foreign resolvers answer from both sides, so they are the default and
-	// China traffic is kept direct by *rules*, not by DNS.
-	const remote = ["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"];
+	// Foreign DoH must travel through a working proxy on mainland networks.
+	// Proxy endpoints are pinned above, so resolving the proxy itself cannot
+	// recursively depend on the proxy. Other upstream hosts use direct bootstrap.
+	const remote = [
+		`https://1.1.1.1/dns-query#${GROUP.AUTO}`,
+		`https://8.8.8.8/dns-query#${GROUP.AUTO}`,
+	];
 
 	config.dns = {
 		enable: true,
 		ipv6: false,
 		"enhanced-mode": "fake-ip",
 		"fake-ip-range": "198.18.0.1/16",
-		// Plain IPs only — these bootstrap the DoH hostnames above, so a DoH URL
-		// here would be circular.
-		"default-nameserver": ["1.1.1.1", "8.8.8.8"],
+		"default-nameserver": ["223.5.5.5", "119.29.29.29"],
 		nameserver: remote,
-		// Resolves the node's own hostname; without it the client would try to
-		// dial a fake-ip address for the server it is connecting to.
-		"proxy-server-nameserver": remote,
+		"proxy-server-nameserver": ["223.5.5.5", "119.29.29.29"],
+		"direct-nameserver": ["https://dns.alidns.com/dns-query", "https://doh.pub/dns-query"],
+		"use-hosts": true,
+
 		"fake-ip-filter": [
 			"*.lan",
 			"*.local",
@@ -366,7 +373,21 @@ function dedupe(items: string[]): string[] {
 export function rewrite(config: ClashConfig): ClashConfig {
 	// Computed before the relay is appended, so the relay never becomes a member
 	// of AUTO — which its own dialer-proxy points at.
-	const nodes = proxyNames(config).filter((name) => name !== RELAY_NAME);
+	const upstream = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
+	const rank: Record<string, number> = { hysteria2: 0, ss: 1, vless: 2, anytls: 3 };
+	const ordered = upstream.filter((p) => p?.name !== RELAY_NAME).sort(
+		(a, b) => (rank[String(a.type)] ?? 2) - (rank[String(b.type)] ?? 2),
+	);
+	config.proxies = ordered.map((p) => {
+		const ip = SERVER_HOSTS[String(p.server)];
+		return ip ? { ...p, server: ip } : p;
+	});
+	config.hosts = { ...(config.hosts as Record<string, unknown> ?? {}), ...SERVER_HOSTS };
+	const nodes = proxyNames(config);
+	// AnyTLS showed repeated TLS resets on this route; retain it for explicit
+	// manual use, but do not allow automatic selection to pick it.
+	const automaticNodes = ordered.filter((p) => p.type !== "anytls").map((p) => p.name);
+	if (automaticNodes.length === 0) automaticNodes.push(...nodes);
 	if (nodes.length === 0) {
 		throw new Error("No proxies found in upstream subscription");
 	}
@@ -387,7 +408,7 @@ export function rewrite(config: ClashConfig): ClashConfig {
 	config["external-controller"] = "127.0.0.1:9090";
 	config.profile = { "store-selected": true, "store-fake-ip": true };
 
-	config["proxy-groups"] = buildProxyGroups(nodes, relay !== null);
+	config["proxy-groups"] = buildProxyGroups(nodes, automaticNodes, relay !== null);
 	config["rule-providers"] = buildRuleProviders();
 	config.rules = buildRules();
 

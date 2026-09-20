@@ -22,11 +22,22 @@ The generated config is **self-contained**. It carries its own `dns` and
 Clash Party's DNS Override / sniff override sidebar switches), so it works
 as-is in Stash, mihomo, and Clash Verge.
 
-DNS is deliberately **remote-first, not China-first**: encrypted foreign
-resolvers are the default and China traffic is kept direct by *rules*. An
-earlier design used domestic resolvers as primary with a
-`fallback`/`fallback-filter` geoip-CN split, which only resolved on a mainland
-network — anywhere else every lookup hard-failed with `couldn't find ip`.
+Normal service groups default to **⚡ AUTO**, a fallback group ordered
+Hysteria2 → SS2022 → REALITY. HTTPS health checks run every 60 seconds.
+AnyTLS remains available in **🚀 MANUAL**, but is excluded from automatic
+selection because it showed repeated TLS resets on the current route.
+
+The public addresses in `SERVER_HOSTS` pin straw's proxy endpoints so local
+DNS cannot redirect them. Update this map in `api/rewrite.ts` if straw moves.
+Proxy credentials, TLS SNI, and certificate verification are preserved.
+Foreign DNS-over-HTTPS queries go **through ⚡ AUTO**, while direct traffic
+uses domestic resolvers. This avoids trying to reach blocked foreign DNS
+before a proxy connection exists.
+
+The user-facing `sub.tsonubin.com/api/subscribe` URL is forwarded by nginx on
+straw (`/etc/nginx/sites-enabled/clash-subscription`) to this Vercel project.
+After deploying, refresh the existing subscription in Clash Party and select
+**⚡ AUTO** for service groups if a previous manual selection was remembered.
 
 Note that QUIC-based protocols (hysteria2) allocate the same per-connection
 buffers in whichever core ultimately runs them; generating config server-side
@@ -39,7 +50,7 @@ SOCKS5 proxy and points the 🤖 AI group at it, giving AI services a stable US
 egress:
 
 - **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **↩ AI-FALLBACK**
-  (a `url-test` over the normal nodes) if the relay stops answering
+  (a `fallback` over the normal nodes) if the relay stops answering
   healthchecks — so a dead relay degrades instead of black-holing AI traffic.
 - `US-RELAY` sets `dialer-proxy: ⚡ AUTO`, so it is reached *through* your own
   nodes rather than from the client's raw network. The relay is deliberately
@@ -71,6 +82,7 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit
+npm test            # subscription routing regressions
 vercel dev          # requires the Vercel CLI; reads .env.local
 ```
 
