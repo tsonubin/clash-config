@@ -42,6 +42,7 @@ export const GROUP = {
 	AI: "🤖 AI",
 	AI_ROUTE: "🛰 AI-ROUTE",
 	AI_FALLBACK: "↩ AI-FALLBACK",
+	STEAM: "🎮 Steam",
 	GOOGLE: "🔍 Google",
 	YOUTUBE: "▶️ YouTube",
 	SOCIAL: "🐦 Social",
@@ -132,6 +133,8 @@ function buildRuleProviders(): Record<string, RuleProvider> {
 		openai: bm7Provider("OpenAI"),
 		claude: bm7Provider("Claude"),
 		gemini: bm7Provider("Gemini"),
+		steam: bm7Provider("Steam"),
+		steamcn: bm7Provider("SteamCN"),
 		google: bm7Provider("Google"),
 		youtube: bm7Provider("YouTube"),
 		twitter: bm7Provider("Twitter"),
@@ -175,17 +178,46 @@ const SLACK_IP_CIDRS = ["99.77.128.0/18"];
 
 const DEVELOPER_SUFFIXES = ["supabase.co", "vercel.app", "vercel.com"];
 
+// Steam client login/CM and community traffic need proxying so login, friends/chat,
+// store webviews, and community features work reliably from mainland networks.
+const STEAM_CLIENT_SUFFIXES = [
+	"cm.steampowered.com",
+	"steamcommunity.com",
+	"steam-chat.com",
+];
+
+// Game downloads / content delivery networks (CDNs) must go direct to maximize
+// throughput and avoid burning proxy bandwidth.
+const STEAM_DOWNLOAD_SUFFIXES = [
+	"steamcontent.com",
+	"steamserver.net",
+	"steampipe.akamaized.net",
+	"steampipe-kr.akamaized.net",
+	"steampipe-partner.akamaized.net",
+	"steamcdn-a.akamaihd.net",
+	"steamchina.com",
+];
+
 interface ServiceDef {
 	group: string;
 	/** Members listed before the shared tail; first entry becomes the default. */
 	head?: string[];
 	ruleSets?: string[];
 	suffixes?: string[];
+	directSuffixes?: string[];
+	directRuleSets?: string[];
 	ipCidrs?: string[];
 }
 
 const SERVICES: ServiceDef[] = [
 	{ group: GROUP.AI, ruleSets: ["openai", "claude", "gemini"], suffixes: AI_SUFFIXES },
+	{
+		group: GROUP.STEAM,
+		suffixes: STEAM_CLIENT_SUFFIXES,
+		directSuffixes: STEAM_DOWNLOAD_SUFFIXES,
+		directRuleSets: ["steamcn"],
+		ruleSets: ["steam"],
+	},
 	{ group: GROUP.GOOGLE, ruleSets: ["google"] },
 	{ group: GROUP.YOUTUBE, ruleSets: ["youtube"] },
 	{ group: GROUP.SOCIAL, ruleSets: ["twitter"] },
@@ -298,6 +330,12 @@ function buildRules(): string[] {
 	for (const service of SERVICES) {
 		for (const suffix of service.suffixes ?? []) {
 			rules.push(`DOMAIN-SUFFIX,${suffix},${service.group}`);
+		}
+		for (const suffix of service.directSuffixes ?? []) {
+			rules.push(`DOMAIN-SUFFIX,${suffix},DIRECT`);
+		}
+		for (const set of service.directRuleSets ?? []) {
+			rules.push(`RULE-SET,${set},DIRECT`);
 		}
 		for (const cidr of service.ipCidrs ?? []) {
 			rules.push(`IP-CIDR,${cidr},${service.group},no-resolve`);

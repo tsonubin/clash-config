@@ -1,7 +1,7 @@
 # clash-config
 
 A config generator that turns a proxy subscription into a China-friendly
-Clash config with service-specific proxy groups (AI, Google, YouTube, Social,
+Clash config with service-specific proxy groups (AI, Steam, Google, YouTube, Social,
 Telegram, Netflix, Slack, Microsoft, Apple, Developer) and rules from
 [Loyalsoldier/clash-rules](https://github.com/Loyalsoldier/clash-rules) and
 [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script).
