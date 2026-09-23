@@ -2,7 +2,7 @@
 	"name": "clash-config-subscription",
 	"private": true,
 	"version": "1.0.0",
-	"description": "Vercel endpoint that fetches an upstream Clash subscription and applies the clash-rewrite.js / ai-reroute-only.js override server-side.",
+  "description": "Vercel endpoint that fetches an upstream Clash subscription and rewrites it server-side.",
 	"engines": {
 		"node": ">=18"
 	},
