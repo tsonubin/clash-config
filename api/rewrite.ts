@@ -243,16 +243,26 @@ function proxyNames(config: ClashConfig): string[] {
 }
 
 function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: boolean): ProxyGroup[] {
-	// Shared tail: every service group can reach AUTO, GLOBAL, each individual
-	// node, or DIRECT — so any service can be steered without editing others.
-	const tail = [GROUP.AUTO, GROUP.MANUAL, GROUP.GLOBAL, ...nodes, "DIRECT"];
+	// Routing policy: every proxy-needing selector defaults to MANUAL, which in
+	// turn leads with AUTO. One switch in MANUAL (AUTO or a specific node) then
+	// steers every service at once, while any single service can still be
+	// pinned to another node from its own group.
+	//
+	// Shared selectors: every service group can reach MANUAL, AUTO, GLOBAL, each
+	// individual node, or DIRECT — so any service can be steered without
+	// editing others.
+	const selectors = [GROUP.MANUAL, GROUP.AUTO, GROUP.GLOBAL];
+	// Relay routes are offered inside the AI group (after the shared selectors,
+	// before the raw nodes) so the US egress remains one click away without
+	// being the default.
+	const aiRelayOptions = hasRelay ? [GROUP.AI_ROUTE, RELAY_NAME, GROUP.AI_FALLBACK] : [];
 
 	const groups: ProxyGroup[] = [
-		{ name: GROUP.MANUAL, type: "select", proxies: nodes },
+		{ name: GROUP.MANUAL, type: "select", proxies: [GROUP.AUTO, ...nodes] },
 		{
 			name: GROUP.GLOBAL,
 			type: "select",
-			proxies: [GROUP.AUTO, GROUP.MANUAL, ...nodes, "DIRECT"],
+			proxies: [GROUP.MANUAL, GROUP.AUTO, ...nodes, "DIRECT"],
 		},
 		{
 			name: GROUP.AUTO,
@@ -290,21 +300,26 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	}
 
 	for (const service of SERVICES) {
-		// The AI group leads with the relay route when one is configured.
-		const head =
-			service.group === GROUP.AI && hasRelay
-				? [GROUP.AI_ROUTE, ...(service.head ?? [])]
-				: (service.head ?? []);
+		const head = service.head ?? [];
+		const extras = service.group === GROUP.AI ? aiRelayOptions : [];
 		groups.push({
 			name: service.group,
 			type: "select",
-			proxies: dedupe([...head, ...tail]),
+			proxies: dedupe([...head, ...selectors, ...extras, ...nodes, "DIRECT"]),
 		});
 	}
 
 	groups.push(
 		{ name: GROUP.DIRECT, type: "select", proxies: ["DIRECT", GROUP.GLOBAL] },
-		{ name: GROUP.FINAL, type: "select", proxies: [GROUP.GLOBAL, GROUP.AUTO, "DIRECT"] },
+		// Unmatched traffic is mostly foreign; DIRECT for it was observed to time
+		// out, so FINAL defaults to MANUAL like every other proxy-needing selector
+		// and keeps DIRECT as an explicit opt-in. Domestic traffic never reaches
+		// FINAL — the direct / cncidr / GEOIP rules above it already send that DIRECT.
+		{
+			name: GROUP.FINAL,
+			type: "select",
+			proxies: [GROUP.MANUAL, GROUP.GLOBAL, GROUP.AUTO, "DIRECT"],
+		},
 	);
 
 	return groups;
