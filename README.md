@@ -22,10 +22,23 @@ The generated config is **self-contained**. It carries its own `dns` and
 Clash Party's DNS Override / sniff override sidebar switches), so it works
 as-is in Stash, mihomo, and Clash Verge.
 
-Normal service groups default to **⚡ AUTO**, a fallback group ordered
-Hysteria2 → SS2022 → REALITY. HTTPS health checks run every 60 seconds.
-AnyTLS remains available in **🚀 MANUAL**, but is excluded from automatic
-selection because it showed repeated TLS resets on the current route.
+All proxy-needing groups (🌍 GLOBAL and every service group except 🍎 Apple)
+default to **🚀 MANUAL**. MANUAL lists **⚡ AUTO** first, followed by each
+individual node, so a single selection in MANUAL steers every service: leave
+it on AUTO for automatic node picking, or pin one protocol for everything.
+Any service group can still be pointed at AUTO, GLOBAL, a specific node, or
+DIRECT on its own.
+
+**⚡ AUTO** is a fallback group ordered Hysteria2 → SS2022 → REALITY with HTTPS
+health checks every 60 seconds. AnyTLS remains available in MANUAL and in every
+service group, but is excluded from automatic selection because it showed
+repeated TLS resets on the current route.
+
+🍎 Apple defaults to DIRECT, 🎯 DIRECT stays DIRECT, and the 🐟 FINAL catch-all
+(`MATCH`) goes through 🌍 GLOBAL → MANUAL rather than DIRECT, because unmatched
+traffic is almost always foreign and DIRECT for it was observed to time out.
+Domestic traffic is still sent DIRECT by the `direct` / `cncidr` / `GEOIP,CN`
+rules before it ever reaches FINAL.
 
 The public addresses in `SERVER_HOSTS` pin straw's proxy endpoints so local
 DNS cannot redirect them. Update this map in `api/rewrite.ts` if straw moves.
@@ -36,8 +49,10 @@ before a proxy connection exists.
 
 The user-facing `sub.tsonubin.com/api/subscribe` URL is forwarded by nginx on
 straw (`/etc/nginx/sites-enabled/clash-subscription`) to this Vercel project.
-After deploying, refresh the existing subscription in Clash Party and select
-**⚡ AUTO** for service groups if a previous manual selection was remembered.
+After deploying, refresh the existing subscription in Clash Party. Because
+`store-selected` is on, a previously remembered selection can override the new
+defaults — set service groups back to **🚀 MANUAL** (and MANUAL to **⚡ AUTO**)
+if that happens.
 
 Note that QUIC-based protocols (hysteria2) allocate the same per-connection
 buffers in whichever core ultimately runs them; generating config server-side
@@ -46,8 +61,10 @@ does not change core runtime behavior.
 ### AI relay (optional)
 
 Setting `RELAY_HOST` / `RELAY_USERNAME` / `RELAY_PASSWORD` adds a `US-RELAY`
-SOCKS5 proxy and points the 🤖 AI group at it, giving AI services a stable US
-egress:
+SOCKS5 proxy and offers it inside the 🤖 AI group, giving AI services a stable
+US egress on demand. The AI group still defaults to **🚀 MANUAL** like every
+other service; pick **🛰 AI-ROUTE** (or `US-RELAY` / **↩ AI-FALLBACK**
+directly) in the AI group when you want the relay:
 
 - **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **↩ AI-FALLBACK**
   (a `fallback` over the normal nodes) if the relay stops answering
@@ -88,13 +105,20 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 
 ## Usage tips
 
-- **🌍 GLOBAL** — default route for general proxy traffic (`MATCH`, GFW, etc.).
-- **Service groups** (AI, LinkedIn, Zoom, …) — switch each service independently.
-- **⚡ AUTO** — url-test across all subscription nodes; good default for most groups.
+- **🚀 MANUAL** — the one switch that steers every service. Leave it on
+  **⚡ AUTO** for automatic node picking, or pin a specific node for everything.
+- **⚡ AUTO** — health-checked fallback over the subscription nodes
+  (Hysteria2 → SS2022 → REALITY; AnyTLS excluded).
+- **🌍 GLOBAL** — route for general proxy traffic and the `MATCH` catch-all;
+  defaults to MANUAL.
+- **Service groups** (AI, Steam, Google, …) — default to MANUAL; switch any one
+  of them to AUTO, GLOBAL, a specific node, or DIRECT independently.
+- **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` / ↩ AI-FALLBACK when
+  the relay env is configured.
 
 ## Troubleshooting
 
 - **No proxies found** — ensure your upstream subscription has at least one proxy node.
-- **Service not proxying** — set that service's group to **⚡ AUTO** in the proxy panel.
+- **Service not proxying** — set that service's group back to **🚀 MANUAL** in the proxy panel, and check MANUAL points at **⚡ AUTO** or a working node. A remembered selection from an older config can override the defaults.
 - **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
 - **`[Provider] slack pull error: 400 Bad Request`** — caused by a double slash in the blackmatrix7 ruleset URL. This is handled correctly in the current code.
