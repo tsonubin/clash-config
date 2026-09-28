@@ -22,8 +22,8 @@ The generated config is **self-contained**. It carries its own `dns` and
 Clash Party's DNS Override / sniff override sidebar switches), so it works
 as-is in Stash, mihomo, and Clash Verge.
 
-All proxy-needing groups (🌍 GLOBAL and every service group except 🍎 Apple)
-default to **🚀 MANUAL**. MANUAL lists **⚡ AUTO** first, followed by each
+All proxy-needing groups (🌍 GLOBAL, 🐟 FINAL, and every service group except
+🍎 Apple) default to **🚀 MANUAL**. MANUAL lists **⚡ AUTO** first, followed by each
 individual node, so a single selection in MANUAL steers every service: leave
 it on AUTO for automatic node picking, or pin one protocol for everything.
 Any service group can still be pointed at AUTO, GLOBAL, a specific node, or
@@ -35,8 +35,9 @@ service group, but is excluded from automatic selection because it showed
 repeated TLS resets on the current route.
 
 🍎 Apple defaults to DIRECT, 🎯 DIRECT stays DIRECT, and the 🐟 FINAL catch-all
-(`MATCH`) goes through 🌍 GLOBAL → MANUAL rather than DIRECT, because unmatched
-traffic is almost always foreign and DIRECT for it was observed to time out.
+(`MATCH`) defaults to 🚀 MANUAL (with 🌍 GLOBAL, ⚡ AUTO, and DIRECT selectable)
+rather than DIRECT, because unmatched traffic is almost always foreign and
+DIRECT for it was observed to time out.
 Domestic traffic is still sent DIRECT by the `direct` / `cncidr` / `GEOIP,CN`
 rules before it ever reaches FINAL.
 
@@ -109,8 +110,9 @@ vercel dev          # requires the Vercel CLI; reads .env.local
   **⚡ AUTO** for automatic node picking, or pin a specific node for everything.
 - **⚡ AUTO** — health-checked fallback over the subscription nodes
   (Hysteria2 → SS2022 → REALITY; AnyTLS excluded).
-- **🌍 GLOBAL** — route for general proxy traffic and the `MATCH` catch-all;
-  defaults to MANUAL.
+- **🌍 GLOBAL** — route for general proxy traffic; defaults to MANUAL.
+- **🐟 FINAL** — the `MATCH` catch-all for unmatched (mostly foreign) traffic;
+  defaults to MANUAL, with GLOBAL / AUTO / DIRECT selectable.
 - **Service groups** (AI, Steam, Google, …) — default to MANUAL; switch any one
   of them to AUTO, GLOBAL, a specific node, or DIRECT independently.
 - **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` / ↩ AI-FALLBACK when

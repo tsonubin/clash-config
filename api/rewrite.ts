@@ -312,13 +312,13 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	groups.push(
 		{ name: GROUP.DIRECT, type: "select", proxies: ["DIRECT", GROUP.GLOBAL] },
 		// Unmatched traffic is mostly foreign; DIRECT for it was observed to time
-		// out, so FINAL goes through GLOBAL (→ MANUAL) and keeps DIRECT as an
-		// explicit opt-in. Domestic traffic never reaches FINAL — the direct /
-		// cncidr / GEOIP rules above it already send that DIRECT.
+		// out, so FINAL defaults to MANUAL like every other proxy-needing selector
+		// and keeps DIRECT as an explicit opt-in. Domestic traffic never reaches
+		// FINAL — the direct / cncidr / GEOIP rules above it already send that DIRECT.
 		{
 			name: GROUP.FINAL,
 			type: "select",
-			proxies: [GROUP.GLOBAL, GROUP.MANUAL, GROUP.AUTO, "DIRECT"],
+			proxies: [GROUP.MANUAL, GROUP.GLOBAL, GROUP.AUTO, "DIRECT"],
 		},
 	);
 

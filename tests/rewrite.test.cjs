@@ -37,9 +37,9 @@ test('Apple stays DIRECT by default while DIRECT group remains DIRECT', () => {
  assert.equal(apple.proxies[0],'DIRECT');assert.equal(apple.proxies[1],GROUP.MANUAL);
  assert.equal(groups.find(g=>g.name===GROUP.DIRECT).proxies[0],'DIRECT');
 });
-test('FINAL catch-all prefers GLOBAL over DIRECT and domestic rules stay DIRECT', () => {
+test('FINAL catch-all defaults to MANUAL over DIRECT and domestic rules stay DIRECT', () => {
  const c=rewrite(fixture());const groups=c['proxy-groups'];const final=groups.find(g=>g.name===GROUP.FINAL);
- assert.deepEqual(final.proxies,[GROUP.GLOBAL,GROUP.MANUAL,GROUP.AUTO,'DIRECT']);
+ assert.deepEqual(final.proxies,[GROUP.MANUAL,GROUP.GLOBAL,GROUP.AUTO,'DIRECT']);
  const rules=c.rules;assert.equal(rules[rules.length-1],`MATCH,${GROUP.FINAL}`);
  for(const rule of ['RULE-SET,direct,DIRECT','RULE-SET,cncidr,DIRECT,no-resolve','GEOIP,CN,DIRECT']) assert.ok(rules.indexOf(rule)!==-1&&rules.indexOf(rule)<rules.length-1,`${rule} should precede MATCH`);
 });
