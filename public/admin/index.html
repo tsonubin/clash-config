@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="referrer" content="no-referrer">
+	<meta name="robots" content="noindex, nofollow">
+	<title>Administrator</title>
+	<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+	<main>
+		<h1>Administrator</h1>
+		<p class="lede">Enter the server password, then choose a new PIN. The password stays in the server environment. The PIN is written to the PIN file.</p>
+		<form id="password-form">
+			<label for="password">Administrator password</label>
+			<input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+			<button type="submit" id="continue">Continue</button>
+			<p id="error" role="alert"></p>
+		</form>
+		<form id="pin-form" hidden>
+			<label for="new-pin">New PIN</label>
+			<input id="new-pin" name="pin" type="password" autocomplete="new-password" minlength="4" maxlength="64" required>
+			<label for="confirm-pin">Confirm new PIN</label>
+			<input id="confirm-pin" type="password" autocomplete="new-password" minlength="4" maxlength="64" required>
+			<button type="submit" id="save">Save PIN</button>
+			<p id="pin-error" role="alert"></p>
+			<p id="ok" role="status"></p>
+		</form>
+		<p class="admin"><a href="/">Back</a></p>
+	</main>
+	<noscript>This page needs JavaScript to change the PIN.</noscript>
+	<script>
+		const passwordForm = document.querySelector("#password-form");
+		const passwordInput = document.querySelector("#password");
+		const continueButton = document.querySelector("#continue");
+		const error = document.querySelector("#error");
+		const pinForm = document.querySelector("#pin-form");
+		const newPin = document.querySelector("#new-pin");
+		const confirmPin = document.querySelector("#confirm-pin");
+		const saveButton = document.querySelector("#save");
+		const pinError = document.querySelector("#pin-error");
+		const ok = document.querySelector("#ok");
+		let password = "";
+
+		passwordForm.addEventListener("submit", async (event) => {
+			event.preventDefault();
+			error.textContent = "";
+			continueButton.disabled = true;
+			try {
+				const response = await fetch("/api/portal/auth", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ password: passwordInput.value }),
+				});
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok) {
+					error.textContent = data.error || "Incorrect password";
+					return;
+				}
+				password = passwordInput.value;
+				passwordInput.value = "";
+				passwordForm.hidden = true;
+				pinForm.hidden = false;
+				newPin.focus();
+			} catch {
+				error.textContent = "Could not reach the server";
+			} finally {
+				continueButton.disabled = false;
+			}
+		});
+
+		pinForm.addEventListener("submit", async (event) => {
+			event.preventDefault();
+			pinError.textContent = "";
+			ok.textContent = "";
+			if (newPin.value !== confirmPin.value) {
+				pinError.textContent = "The two PINs do not match";
+				return;
+			}
+			saveButton.disabled = true;
+			try {
+				const response = await fetch("/api/portal/pin", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ password, pin: newPin.value }),
+				});
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok) {
+					pinError.textContent = data.error || "Could not save the PIN";
+					return;
+				}
+				password = "";
+				newPin.value = "";
+				confirmPin.value = "";
+				ok.textContent = "PIN updated";
+			} catch {
+				pinError.textContent = "Could not reach the server";
+			} finally {
+				saveButton.disabled = false;
+			}
+		});
+	</script>
+</body>
+</html>

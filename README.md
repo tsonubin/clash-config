@@ -79,6 +79,28 @@ AI-* groups are omitted and AI traffic uses the normal nodes. Credentials are
 read from the environment because the served config contains them in
 plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 
+### PIN portal
+
+The site root (`/`) is a PIN page that works in a phone or desktop browser.
+After the correct PIN, it shows a subscription URL and a large copy button.
+Each URL is a fresh random path plus a random key, for example
+`https://sub.tsonubin.com/<path>/<key>`. The link works for five minutes
+(`LINK_TTL_SECONDS`, default 300) and then the server answers as if it was
+never issued, so a copied or probed address does not stay usable.
+
+A small **Administrator** link opens `/admin`. That page asks for
+`ADMIN_PASSWORD` (environment variable only) and then writes a new PIN to
+`PIN_FILE` (default `data/pin.txt`, one line). Until that file exists, the
+gate reads `PORTAL_PIN`. The file is gitignored. On Vercel the project
+directory is read-only, so set `PIN_FILE` to a persistent writable path or
+keep using `PORTAL_PIN` and change it in the project environment.
+
+The stable `/api/subscribe?token=` endpoint is unchanged for clients that
+already have it. New links from the portal do not use that token. Point the
+public host at this whole deployment, not only `/api/subscribe`, because the
+generated paths live at the site root. `vercel.json` sends those two-segment
+paths to the checker and leaves `/api/subscribe` on its own function.
+
 ### Deploy
 
 1. `vercel link` (or `vercel deploy` the first time) from this directory.
@@ -87,8 +109,11 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
    - `SUBSCRIPTION_URL` — your upstream subscription URL. Keep this
      server-side only; it's typically a credential.
    - `SUBSCRIBE_TOKEN` — a shared secret required as `?token=` on the
-     endpoint, so the deployed URL can't be scraped for your relay
-     credentials by anyone who finds it (`openssl rand -hex 24`).
+     stable endpoint, so the deployed URL can't be scraped for your relay
+     credentials by anyone who finds it (`openssl rand -hex 24`). Also signs
+     portal links when `LINK_SECRET` is unset.
+   - `PUBLIC_ORIGIN`, `PORTAL_PIN` or `PIN_FILE`, and `ADMIN_PASSWORD` — the
+     root PIN page and the administrator PIN change. See [PIN portal](#pin-portal).
    - `RELAY_HOST` / `RELAY_PORT` / `RELAY_USERNAME` / `RELAY_PASSWORD` —
      optional SOCKS5 relay for AI egress (see below). Omit to disable.
 3. `vercel deploy --prod`.

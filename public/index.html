@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="referrer" content="no-referrer">
+	<meta name="robots" content="noindex, nofollow">
+	<title>Subscription</title>
+	<link rel="stylesheet" href="/portal.css">
+</head>
+<body>
+	<main>
+		<h1>Subscription</h1>
+		<p class="lede">Enter the PIN to generate a link for your client.</p>
+		<form id="pin-form">
+			<label for="pin">PIN</label>
+			<input id="pin" name="pin" type="password" autocomplete="current-password" minlength="4" maxlength="64" required autofocus>
+			<button type="submit" id="unlock">Continue</button>
+		</form>
+		<p id="error" role="alert"></p>
+		<section id="result" hidden>
+			<label for="url">Subscription URL</label>
+			<textarea id="url" readonly spellcheck="false" rows="3"></textarea>
+			<button type="button" id="copy">Copy subscription URL</button>
+			<p id="copy-status" role="status"></p>
+			<p id="expiry"></p>
+			<button type="button" id="again" class="secondary">Generate another</button>
+		</section>
+		<p class="admin"><a href="/admin">Administrator</a></p>
+	</main>
+	<noscript>This page needs JavaScript to generate a link.</noscript>
+	<script>
+		const form = document.querySelector("#pin-form");
+		const pinInput = document.querySelector("#pin");
+		const unlock = document.querySelector("#unlock");
+		const error = document.querySelector("#error");
+		const result = document.querySelector("#result");
+		const urlInput = document.querySelector("#url");
+		const copyButton = document.querySelector("#copy");
+		const copyStatus = document.querySelector("#copy-status");
+		const expiry = document.querySelector("#expiry");
+		const again = document.querySelector("#again");
+
+		async function issue() {
+			error.textContent = "";
+			unlock.disabled = true;
+			again.disabled = true;
+			try {
+				const response = await fetch("/api/portal/issue", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ pin: pinInput.value }),
+				});
+				const data = await response.json().catch(() => ({}));
+				if (!response.ok) {
+					error.textContent = data.error || "Could not create a link";
+					return;
+				}
+				urlInput.value = data.url || "";
+				const minutes = Math.max(1, Math.round((data.expiresInSeconds || 300) / 60));
+				expiry.textContent = "This link stops working in " + minutes + " minutes. Paste it into your client before then. After that, generate a new one.";
+				form.hidden = true;
+				document.querySelector(".lede").hidden = true;
+				result.hidden = false;
+				urlInput.focus();
+				urlInput.select();
+			} catch {
+				error.textContent = "Could not reach the server";
+			} finally {
+				unlock.disabled = false;
+				again.disabled = false;
+			}
+		}
+
+		form.addEventListener("submit", (event) => {
+			event.preventDefault();
+			issue();
+		});
+		again.addEventListener("click", () => issue());
+
+		function markCopied() {
+			copyButton.textContent = "Copied";
+			copyStatus.textContent = "Copied to the clipboard.";
+			window.clearTimeout(markCopied.timer);
+			markCopied.timer = window.setTimeout(() => {
+				copyButton.textContent = "Copy subscription URL";
+			}, 4000);
+		}
+
+		copyButton.addEventListener("click", () => {
+			const value = urlInput.value;
+			error.textContent = "";
+			copyStatus.textContent = "";
+			urlInput.focus();
+			urlInput.select();
+			let copied = false;
+			try {
+				copied = document.execCommand("copy");
+			} catch {
+				copied = false;
+			}
+			if (copied) {
+				markCopied();
+				return;
+			}
+			const write = navigator.clipboard && navigator.clipboard.writeText;
+			if (!write) {
+				copyStatus.textContent = "The link is selected. Use your browser's copy command.";
+				return;
+			}
+			navigator.clipboard.writeText(value).then(markCopied, () => {
+				copyStatus.textContent = "The link is selected. Use your browser's copy command.";
+			});
+		});
+	</script>
+</body>
+</html>
