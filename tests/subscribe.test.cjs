@@ -69,6 +69,7 @@ test('upstream failures return generic 502 bodies without upstream detail', asyn
  for (const response of [
   new Response('secret: [leaked-content', { status: 200 }),
   new Response('n/a', { status: 500 }),
+  new Response('proxies: []\n', { status: 200 }),
  ]) {
   await withUpstream(response, async () => {
    process.env.SUBSCRIBE_TOKEN = 'secret-token';
@@ -121,5 +122,31 @@ test('REQUIRE_SUBSCRIBE_TOKEN fails closed on a missing token without breaking t
   const open = mockRes();
   await handler({ query: {}, method: 'GET' }, open);
   assert.equal(open.statusCode, 200, 'default stays open when no token is configured');
+ });
+});
+
+test('oversized upstream responses are refused before parsing', async () => {
+ await withUpstream(new Response(UPSTREAM_YAML, { status: 200, headers: { 'content-length': '999999999' } }), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 502);
+  assert.ok(!res.body.includes('Node1'), 'oversized body must not be parsed');
+ });
+});
+
+test('only GET and HEAD are served', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'POST' }, res);
+  assert.equal(res.statusCode, 405);
+  assert.equal(res.headers['Allow'], 'GET, HEAD');
+  assert.equal(seen.length, 0, 'rejected methods must not fetch upstream');
+  const head = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'HEAD' }, head);
+  assert.equal(head.statusCode, 200);
  });
 });

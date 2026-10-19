@@ -4,6 +4,9 @@ import yaml from "js-yaml";
 import { rewrite, UpstreamConfigError, type ClashConfig } from "./rewrite.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
+// Subscriptions are small (well under 1 MiB); the cap only bounds memory and
+// YAML parse cost against a broken or hostile upstream.
+const MAX_UPSTREAM_BYTES = 8 * 1024 * 1024;
 
 // Fixed-length, non-early-exit comparison so the token check cannot be probed
 // byte-by-byte through response timing.
@@ -36,6 +39,12 @@ async function fetchUpstream(url: string): Promise<Response> {
 // directly. The emitted config is self-contained: it carries its own DNS and
 // sniffer sections and does not depend on client-side override toggles.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+	const method = req.method ?? "GET";
+	if (method !== "GET" && method !== "HEAD") {
+		res.setHeader("Allow", "GET, HEAD");
+		res.status(405).send("Method not allowed");
+		return;
+	}
 	const requiredToken = process.env.SUBSCRIBE_TOKEN;
 	// Opt-in fail-closed: with REQUIRE_SUBSCRIBE_TOKEN=1 a missing SUBSCRIBE_TOKEN
 	// refuses every request instead of silently serving the (credential-bearing)
@@ -75,7 +84,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			res.status(502).send(`Upstream subscription returned HTTP ${upstream.status}`);
 			return;
 		}
+		const declared = Number(upstream.headers.get("content-length"));
+		if (declared > MAX_UPSTREAM_BYTES) {
+			res.status(502).send("Upstream subscription is too large");
+			return;
+		}
 		rawYaml = await upstream.text();
+		if (rawYaml.length > MAX_UPSTREAM_BYTES) {
+			res.status(502).send("Upstream subscription is too large");
+			return;
+		}
 	} catch (err) {
 		// Detail stays in the logs: fetch errors can name the upstream URL.
 		console.error("Upstream subscription fetch failed:", err);
@@ -101,10 +119,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	try {
 		rewritten = rewrite(config);
 	} catch (err) {
-		// Bad upstream content is the upstream's fault (502); anything else is an
-		// operator/config error (500).
-		const upstreamFault = err instanceof UpstreamConfigError;
-		res.status(upstreamFault ? 502 : 500).send(`Rewrite error: ${(err as Error).message}`);
+		if (err instanceof UpstreamConfigError) {
+			// Curated and self-describing; "Rewrite error:" would mislabel an
+			// upstream problem as an internal one.
+			res.status(502).send(err.message);
+			return;
+		}
+		console.error("Rewrite error:", err);
+		res.status(500).send(`Rewrite error: ${(err as Error).message}`);
 		return;
 	}
 
