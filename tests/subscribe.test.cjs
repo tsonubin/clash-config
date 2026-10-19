@@ -232,3 +232,22 @@ test('partially configured relay is an operator error, not silent omission', asy
   }
  });
 });
+
+test('malformed upstream passthrough headers are dropped, not fatal', async () => {
+ const bad = 'upload=1; total=' + String.fromCharCode(7) + '2'; // control byte Node's setHeader rejects
+ const fake = {
+  ok: true,
+  status: 200,
+  headers: { get: (name) => name === 'subscription-userinfo' ? bad : null },
+  text: async () => UPSTREAM_YAML,
+ };
+ await withUpstream(fake, async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /proxy-groups:/);
+  assert.equal(res.headers['subscription-userinfo'], undefined);
+ });
+});

@@ -174,10 +174,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	res.setHeader("Cache-Control", SUCCESS_CACHE_CONTROL);
 
 	// Pass through quota/expiry headers so clients still show traffic usage.
-	const userInfo = upstream.headers.get("subscription-userinfo");
-	if (userInfo) res.setHeader("subscription-userinfo", userInfo);
-	const disposition = upstream.headers.get("content-disposition");
-	if (disposition) res.setHeader("content-disposition", disposition);
+	// Best effort: Node's setHeader throws on values outside its charset, and a
+	// broken or hostile upstream must never cost us the whole response.
+	// Printable ASCII + tab is all these headers ever legitimately carry.
+	for (const name of ["subscription-userinfo", "content-disposition"] as const) {
+		const value = upstream.headers.get(name);
+		if (!value) continue;
+		if (/^[\t\x20-\x7e]*$/.test(value)) res.setHeader(name, value);
+		else console.error(`Dropping malformed upstream header ${name}`);
+	}
 
 	res.status(200).send(outputYaml);
 }
