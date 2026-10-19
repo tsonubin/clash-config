@@ -91,7 +91,7 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 2. Set environment variables (`vercel env add <NAME>` or via the dashboard) —
    see [`.env.example`](.env.example) for the full list:
    - `SUBSCRIPTION_URL` — your upstream subscription URL. Keep this
-     server-side only; it's typically a credential.
+     server-side only; it's typically a credential. Must be an http(s) URL.
    - `SUBSCRIBE_TOKEN` — a shared secret required as `?token=` on the
      endpoint, so the deployed URL can't be scraped for your relay
      credentials by anyone who finds it (`openssl rand -hex 24`).
@@ -144,7 +144,8 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 - **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
 - **Endpoint status codes** — `400` no subscription source configured, or an
   invalid `?url=`; `401` missing/incorrect `?token=`; `405` method not GET/HEAD;
-  `500` operator configuration error (e.g. invalid `RELAY_PORT`); `502` the
+  `500` operator configuration error (e.g. invalid `RELAY_PORT` or
+  `SUBSCRIPTION_URL`); `502` the
   upstream subscription was unreachable, oversized (8 MiB cap), or not a usable
   Clash config (parse errors include line/column); `503`
   `REQUIRE_SUBSCRIBE_TOKEN=1` with no `SUBSCRIBE_TOKEN` configured, or a

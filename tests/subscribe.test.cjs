@@ -203,3 +203,15 @@ test('operator configuration errors surface as 500, not upstream 502', async () 
   }
  });
 });
+
+test('a non-http SUBSCRIPTION_URL is an operator error, not upstream trouble', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  for (const url of ['file:///etc/passwd', 'not-a-url']) {
+   process.env.SUBSCRIPTION_URL = url;
+   const res = mockRes();
+   await handler({ query: {}, method: 'GET' }, res);
+   assert.equal(res.statusCode, 500, `${url} must be an operator error`);
+  }
+  assert.equal(seen.length, 0, 'invalid configured URLs must not be fetched');
+ });
+});

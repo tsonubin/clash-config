@@ -69,22 +69,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const allowUrlOverride = rawAllowOverride === "1";
 	const queryUrl = firstQueryValue(req.query.url);
 	// ?url= genuinely overrides when the escape hatch is enabled; without it the
-	// environment is the only source. Caller-supplied, so restrict it to http(s):
-	// any other scheme (file:, data:, …) or an unparsable value is rejected
-	// before it can reach fetch.
-	if (allowUrlOverride && queryUrl) {
-		let queryProtocol: string | undefined;
-		try {
-			queryProtocol = new URL(queryUrl).protocol;
-		} catch {
-			queryProtocol = undefined; // unparsable → rejected below
-		}
-		if (queryProtocol !== "http:" && queryProtocol !== "https:") {
-			res.status(400).send("Invalid ?url=: must be an http(s) URL");
-			return;
-		}
-	}
-	const sourceUrl = allowUrlOverride && queryUrl ? queryUrl : configuredUrl;
+	// environment is the only source.
+	const overridden = allowUrlOverride && Boolean(queryUrl);
+	const sourceUrl = overridden ? queryUrl : configuredUrl;
 
 	if (!sourceUrl) {
 		res
@@ -92,6 +79,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			.send(
 				"Missing subscription source: set the SUBSCRIPTION_URL environment variable (recommended), " +
 					"or set ALLOW_URL_OVERRIDE=1 and pass ?url=<encoded subscription URL>.",
+			);
+		return;
+	}
+
+	// Restrict the source to http(s) so no scheme (file:, data:, …) or garbage
+	// can reach fetch. A caller-supplied ?url= is the client's mistake (400); a
+	// bad configured SUBSCRIPTION_URL is an operator error (500).
+	let protocol: string | undefined;
+	try {
+		protocol = new URL(sourceUrl).protocol;
+	} catch {
+		protocol = undefined; // unparsable → rejected below
+	}
+	if (protocol !== "http:" && protocol !== "https:") {
+		res
+			.status(overridden ? 400 : 500)
+			.send(
+				overridden
+					? "Invalid ?url=: must be an http(s) URL"
+					: "Invalid SUBSCRIPTION_URL: must be an http(s) URL",
 			);
 		return;
 	}
