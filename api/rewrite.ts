@@ -150,8 +150,9 @@ function buildRuleProviders(): Record<string, RuleProvider> {
 	};
 }
 
-// Domains worth pinning directly, either because the ruleset misses them or
-// because a broader reject list would otherwise swallow them.
+// Domains worth pinning directly because the service rulesets miss them. These
+// pins do NOT rescue anything the reject list matches: `RULE-SET,reject,REJECT`
+// is evaluated before them (see buildRules), so the reject list wins.
 const AI_SUFFIXES = [
 	"claude.com",
 	"claude.ai",
@@ -332,9 +333,11 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 function buildRules(): string[] {
 	const rules: string[] = [];
 
-	// Order matters: private/LAN first, then explicit service matches, then the
-	// broad China-direct sets, then FINAL. Ads are rejected before services so a
-	// tracker on a proxied domain still dies.
+	// Order matters: private/LAN first, then the reject list, then explicit
+	// service matches, then the broad China-direct sets, then FINAL. Ads are
+	// rejected before services so a tracker on a proxied domain still dies; the
+	// deliberate tradeoff is that the reject list beats every service pin below
+	// it, including the pinned suffix lists in SERVICES.
 	rules.push(
 		"RULE-SET,private,DIRECT",
 		"DOMAIN-SUFFIX,local,DIRECT",
