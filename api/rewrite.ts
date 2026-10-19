@@ -10,6 +10,10 @@
 
 export type ClashConfig = Record<string, unknown>;
 
+// Thrown for problems with the upstream subscription's content, which the
+// endpoint reports as 502; anything else is an operator/config error (500).
+export class UpstreamConfigError extends Error {}
+
 interface Proxy {
 	name: string;
 	[key: string]: unknown;
@@ -83,7 +87,7 @@ function buildRelayProxy(): Proxy | null {
 	const password = process.env.RELAY_PASSWORD;
 	if (!server || !username || !password) return null;
 
-	const port = Number(process.env.RELAY_PORT ?? 443);
+	const port = Number(process.env.RELAY_PORT || 443);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) {
 		throw new Error(`Invalid RELAY_PORT: ${process.env.RELAY_PORT}`);
 	}
@@ -235,11 +239,22 @@ const SERVICES: ServiceDef[] = [
 	{ group: GROUP.DEVELOPER, ruleSets: ["github"], suffixes: DEVELOPER_SUFFIXES },
 ];
 
-function proxyNames(config: ClashConfig): string[] {
-	const proxies = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
-	return proxies
-		.map((p) => p?.name)
-		.filter((name): name is string => typeof name === "string" && name.length > 0);
+// A malformed or duplicated entry would surface as a broken group member or a
+// client-side "duplicate proxy" error, so keep only the first valid entry per
+// name; an all-junk subscription then falls through to the clean "no proxies"
+// error below.
+function normalizeProxies(raw: unknown): Proxy[] {
+	const seen = new Set<string>();
+	const out: Proxy[] = [];
+	for (const entry of Array.isArray(raw) ? (raw as unknown[]) : []) {
+		if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+		const p = entry as Proxy;
+		if (typeof p.name !== "string" || p.name.length === 0 || typeof p.type !== "string") continue;
+		if (seen.has(p.name)) continue;
+		seen.add(p.name);
+		out.push(p);
+	}
+	return out;
 }
 
 function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: boolean): ProxyGroup[] {
@@ -424,11 +439,14 @@ function dedupe(items: string[]): string[] {
 }
 
 export function rewrite(config: ClashConfig): ClashConfig {
+	if (config === null || typeof config !== "object" || Array.isArray(config)) {
+		throw new UpstreamConfigError("Upstream subscription is not a Clash config");
+	}
 	// Computed before the relay is appended, so the relay never becomes a member
 	// of AUTO — which its own dialer-proxy points at.
-	const upstream = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
+	const upstream = normalizeProxies(config.proxies);
 	const rank: Record<string, number> = { hysteria2: 0, ss: 1, vless: 2, anytls: 3 };
-	const ordered = upstream.filter((p) => p?.name !== RELAY_NAME).sort(
+	const ordered = upstream.filter((p) => p.name !== RELAY_NAME).sort(
 		(a, b) => (rank[String(a.type)] ?? 2) - (rank[String(b.type)] ?? 2),
 	);
 	config.proxies = ordered.map((p) => {
@@ -436,13 +454,13 @@ export function rewrite(config: ClashConfig): ClashConfig {
 		return ip ? { ...p, server: ip } : p;
 	});
 	config.hosts = { ...(config.hosts as Record<string, unknown> ?? {}), ...SERVER_HOSTS };
-	const nodes = proxyNames(config);
+	const nodes = ordered.map((p) => p.name);
 	// AnyTLS showed repeated TLS resets on this route; retain it for explicit
 	// manual use, but do not allow automatic selection to pick it.
 	const automaticNodes = ordered.filter((p) => p.type !== "anytls").map((p) => p.name);
 	if (automaticNodes.length === 0) automaticNodes.push(...nodes);
 	if (nodes.length === 0) {
-		throw new Error("No proxies found in upstream subscription");
+		throw new UpstreamConfigError("No proxies found in upstream subscription");
 	}
 
 	const relay = buildRelayProxy();

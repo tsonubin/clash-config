@@ -117,3 +117,15 @@ test('Steam routes community and client traffic to Steam group while downloads g
  assert.ok(downloadAkamaiIndex < steamRulesetIndex, 'download direct rules must precede steam proxy ruleset');
  assert.ok(steamcnIndex < steamRulesetIndex, 'steamcn direct ruleset must precede steam proxy ruleset');
 });
+test('malformed upstream entries cannot reach the emitted config', () => {
+ const c = rewrite({ proxies: [
+  null, 'junk', { type: 'ss', server: 'x', port: 1 },
+  { name: 'A', type: 'ss', server: 'x', port: 1 },
+  { name: 'A', type: 'ss', server: 'y', port: 2 },
+  { name: 'B', type: 'hysteria2', server: 'z', port: 3 },
+ ]});
+ assert.deepEqual(c.proxies.map(p => p.name), ['B', 'A']);
+ assert.deepEqual(c['proxy-groups'].find(g => g.name === GROUP.AUTO).proxies, ['B', 'A']);
+ assert.throws(() => rewrite({ proxies: [null, {}] }), /No proxies found/);
+ assert.throws(() => rewrite('not-a-config'), /not a Clash config/);
+});

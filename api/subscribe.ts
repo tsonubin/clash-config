@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import yaml from "js-yaml";
-import { rewrite, type ClashConfig } from "./rewrite.js";
+import { rewrite, UpstreamConfigError, type ClashConfig } from "./rewrite.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -79,7 +79,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	try {
 		rewritten = rewrite(config);
 	} catch (err) {
-		res.status(500).send(`Rewrite error: ${(err as Error).message}`);
+		// Bad upstream content is the upstream's fault (502); anything else is an
+		// operator/config error (500).
+		const upstreamFault = err instanceof UpstreamConfigError;
+		res.status(upstreamFault ? 502 : 500).send(`Rewrite error: ${(err as Error).message}`);
 		return;
 	}
 
