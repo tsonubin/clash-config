@@ -44,6 +44,7 @@ test('requests without the configured token are rejected', async () => {
    const res = mockRes();
    await handler({ query, method: 'GET' }, res);
    assert.equal(res.statusCode, 401, `query ${JSON.stringify(query)} should be rejected`);
+   assert.equal(res.headers['Cache-Control'], 'no-store', '401s must not be cached');
   }
   const res = mockRes();
   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
@@ -59,6 +60,7 @@ test('serves rewritten config and passes through subscription-userinfo', async (
   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
   assert.equal(res.statusCode, 200);
   assert.match(res.headers['Content-Type'], /text\/yaml/);
+  assert.match(res.headers['Cache-Control'], /s-maxage=60/, 'success responses are CDN-cacheable');
   assert.equal(res.headers['subscription-userinfo'], 'upload=1; total=2');
   assert.match(res.body, /proxy-groups:/);
   assert.match(res.body, /Node1/);

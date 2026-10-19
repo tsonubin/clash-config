@@ -7,6 +7,11 @@ const FETCH_TIMEOUT_MS = 15_000;
 // Subscriptions are small (well under 1 MiB); the cap only bounds memory and
 // YAML parse cost against a broken or hostile upstream.
 const MAX_UPSTREAM_BYTES = 8 * 1024 * 1024;
+// Successful responses may sit in a shared cache for a minute (refreshed in the
+// background for 10 more) so client refreshes don't hammer the upstream
+// subscription. The token is part of the URL, hence part of the cache key; only
+// callers who could fetch the body anyway can hit a cached copy.
+const SUCCESS_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=600";
 
 // Fixed-length, non-early-exit comparison so the token check cannot be probed
 // byte-by-byte through response timing.
@@ -39,6 +44,8 @@ async function fetchUpstream(url: string): Promise<Response> {
 // directly. The emitted config is self-contained: it carries its own DNS and
 // sniffer sections and does not depend on client-side override toggles.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+	// Errors are never cached; the success path opts into the CDN cache below.
+	res.setHeader("Cache-Control", "no-store");
 	const method = req.method ?? "GET";
 	if (method !== "GET" && method !== "HEAD") {
 		res.setHeader("Allow", "GET, HEAD");
@@ -133,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const outputYaml = yaml.dump(rewritten, { lineWidth: -1, noRefs: true });
 
 	res.setHeader("Content-Type", "text/yaml; charset=utf-8");
-	res.setHeader("Cache-Control", "no-store");
+	res.setHeader("Cache-Control", SUCCESS_CACHE_CONTROL);
 
 	// Pass through quota/expiry headers so clients still show traffic usage.
 	const userInfo = upstream.headers.get("subscription-userinfo");
