@@ -1,0 +1,109 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const handler = require('../.test-build/api/subscribe.js').default;
+
+const UPSTREAM_YAML = 'proxies:\n  - name: Node1\n    type: ss\n    server: example.com\n    port: 443\n';
+const ENV_KEYS = ['SUBSCRIBE_TOKEN', 'SUBSCRIPTION_URL', 'ALLOW_URL_OVERRIDE'];
+
+function mockRes() {
+ return {
+  statusCode: null, body: null, headers: {},
+  status(c) { this.statusCode = c; return this; },
+  setHeader(k, v) { this.headers[k] = v; },
+  send(b) { this.body = b; return this; },
+ };
+}
+
+// Stubs global fetch, records the URL each request hit, and restores env/ fetch.
+async function withUpstream(response, run) {
+ const seen = [];
+ const realFetch = globalThis.fetch;
+ globalThis.fetch = async (url) => {
+  seen.push(String(url));
+  // A Response body is single-use; hand each call its own clone.
+  return response && typeof response.clone === 'function' ? response.clone() : response;
+ };
+ const saved = {};
+ for (const k of ENV_KEYS) { saved[k] = process.env[k]; delete process.env[k]; }
+ try { await run(seen); }
+ finally {
+  globalThis.fetch = realFetch;
+  for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+ }
+}
+
+function upstreamOk(body = UPSTREAM_YAML, headers = {}) {
+ return new Response(body, { status: 200, headers });
+}
+
+test('requests without the configured token are rejected', async () => {
+ await withUpstream(upstreamOk(), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  for (const query of [{}, { token: 'wrong' }, { token: ['wrong', 'secret-token'] }]) {
+   const res = mockRes();
+   await handler({ query, method: 'GET' }, res);
+   assert.equal(res.statusCode, 401, `query ${JSON.stringify(query)} should be rejected`);
+  }
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+ });
+});
+
+test('serves rewritten config and passes through subscription-userinfo', async () => {
+ await withUpstream(upstreamOk(UPSTREAM_YAML, { 'subscription-userinfo': 'upload=1; total=2' }), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.headers['Content-Type'], /text\/yaml/);
+  assert.equal(res.headers['subscription-userinfo'], 'upload=1; total=2');
+  assert.match(res.body, /proxy-groups:/);
+  assert.match(res.body, /Node1/);
+ });
+});
+
+test('upstream failures return generic 502 bodies without upstream detail', async () => {
+ for (const response of [
+  new Response('secret: [leaked-content', { status: 200 }),
+  new Response('n/a', { status: 500 }),
+ ]) {
+  await withUpstream(response, async () => {
+   process.env.SUBSCRIBE_TOKEN = 'secret-token';
+   process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+   const res = mockRes();
+   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+   assert.equal(res.statusCode, 502);
+   assert.ok(!res.body.includes('leaked-content'), 'body must not quote upstream content');
+   assert.ok(!res.body.includes('up.example'), 'body must not name the upstream URL');
+  });
+ }
+ await withUpstream(Promise.reject(new Error('fetch to https://up.example/sub?cred=x failed')), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub?cred=x';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 502);
+  assert.ok(!res.body.includes('cred=x'), 'body must not leak the subscription URL');
+ });
+});
+
+test('?url= overrides SUBSCRIPTION_URL only when ALLOW_URL_OVERRIDE=1', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/configured';
+  process.env.ALLOW_URL_OVERRIDE = '1';
+  let res = mockRes();
+  await handler({ query: { token: 'secret-token', url: 'https://alt.example/other' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(seen.at(-1), 'https://alt.example/other');
+
+  process.env.ALLOW_URL_OVERRIDE = '0';
+  res = mockRes();
+  await handler({ query: { token: 'secret-token', url: 'https://alt.example/other' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(seen.at(-1), 'https://up.example/configured');
+ });
+});

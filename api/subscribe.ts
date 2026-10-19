@@ -37,7 +37,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const configuredUrl = process.env.SUBSCRIPTION_URL;
 	const allowUrlOverride = process.env.ALLOW_URL_OVERRIDE === "1";
 	const queryUrl = firstQueryValue(req.query.url);
-	const sourceUrl = configuredUrl || (allowUrlOverride ? queryUrl : undefined);
+	// ?url= genuinely overrides when the escape hatch is enabled; without it the
+	// environment is the only source.
+	const sourceUrl = allowUrlOverride && queryUrl ? queryUrl : configuredUrl;
 
 	if (!sourceUrl) {
 		res
@@ -50,19 +52,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	}
 
 	let upstream: Response;
+	let rawYaml: string;
 	try {
 		upstream = await fetchUpstream(sourceUrl);
+		if (!upstream.ok) {
+			res.status(502).send(`Upstream subscription returned HTTP ${upstream.status}`);
+			return;
+		}
+		rawYaml = await upstream.text();
 	} catch (err) {
-		res.status(502).send(`Upstream subscription fetch failed: ${(err as Error).message}`);
+		// Detail stays in the logs: fetch errors can name the upstream URL.
+		console.error("Upstream subscription fetch failed:", err);
+		res.status(502).send("Upstream subscription fetch failed");
 		return;
 	}
-
-	if (!upstream.ok) {
-		res.status(502).send(`Upstream subscription returned HTTP ${upstream.status}`);
-		return;
-	}
-
-	const rawYaml = await upstream.text();
 
 	let config: ClashConfig;
 	try {
@@ -71,7 +74,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		// not the classic PyYAML arbitrary-object-construction footgun.
 		config = yaml.load(rawYaml) as ClashConfig;
 	} catch (err) {
-		res.status(502).send(`Upstream subscription is not valid YAML: ${(err as Error).message}`);
+		// Parse errors quote the offending YAML; keep those snippets out of the
+		// response body.
+		console.error("Upstream subscription is not valid YAML:", err);
+		res.status(502).send("Upstream subscription is not valid YAML");
 		return;
 	}
 
