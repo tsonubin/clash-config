@@ -140,10 +140,12 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 - **No proxies found** — ensure your upstream subscription has at least one proxy node.
 - **Service not proxying** — set that service's group back to **🚀 MANUAL** in the proxy panel, and check MANUAL points at **⚡ AUTO** or a working node. A remembered selection from an older config can override the defaults.
 - **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
-- **Endpoint status codes** — `401` missing/incorrect `?token=`; `405` method
-  not GET/HEAD; `502` the upstream subscription was unreachable, oversized
-  (8 MiB cap), or not a usable Clash config; `503` `REQUIRE_SUBSCRIBE_TOKEN=1`
-  with no `SUBSCRIBE_TOKEN` configured. Error detail is in the Vercel logs.
+- **Endpoint status codes** — `400` no subscription source configured, or an
+  invalid `?url=`; `401` missing/incorrect `?token=`; `405` method not GET/HEAD;
+  `502` the upstream subscription was unreachable, oversized (8 MiB cap), or not
+  a usable Clash config (parse errors include line/column); `503`
+  `REQUIRE_SUBSCRIBE_TOKEN=1` with no `SUBSCRIBE_TOKEN` configured. Error detail
+  is in the Vercel logs.
 
 ## License
 
