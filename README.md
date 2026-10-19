@@ -80,9 +80,11 @@ when you want the relay:
   nodes rather than from the client's raw network. The relay is deliberately
   excluded from `⚡ AUTO`, otherwise that would loop.
 
-All three of host/username/password must be set; otherwise the relay and the
-🛰 AI-ROUTE group are omitted and AI traffic uses the normal nodes. Credentials
-are read from the environment because the served config contains them in
+All three of host/username/password must be set together — a partial setup is
+refused with 500 naming the missing variable — or left unset to disable the
+relay entirely, in which case the 🛰 AI-ROUTE group is omitted and AI traffic
+uses the normal nodes. Credentials are
+read from the environment because the served config contains them in
 plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 
 ### Deploy
@@ -141,7 +143,7 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 
 - **No proxies found** — ensure your upstream subscription has at least one proxy node.
 - **Service not proxying** — set that service's group back to **🚀 MANUAL** in the proxy panel, and check MANUAL points at **⚡ AUTO** or a working node. A remembered selection from an older config can override the defaults.
-- **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
+- **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. A partial setup is refused with 500 (naming the missing variable); all three unset disables the relay entirely.
 - **Endpoint status codes** — `400` no subscription source configured, or an
   invalid `?url=`; `401` missing/incorrect `?token=`; `405` method not GET/HEAD;
   `500` operator configuration error (e.g. invalid `RELAY_PORT` or

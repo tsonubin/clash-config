@@ -215,3 +215,20 @@ test('a non-http SUBSCRIPTION_URL is an operator error, not upstream trouble', a
   assert.equal(seen.length, 0, 'invalid configured URLs must not be fetched');
  });
 });
+
+test('partially configured relay is an operator error, not silent omission', async () => {
+ await withUpstream(upstreamOk(), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  process.env.RELAY_HOST = '203.0.113.10';
+  process.env.RELAY_USERNAME = 'u';
+  try {
+   const res = mockRes();
+   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+   assert.equal(res.statusCode, 500);
+  } finally {
+   delete process.env.RELAY_HOST;
+   delete process.env.RELAY_USERNAME;
+  }
+ });
+});

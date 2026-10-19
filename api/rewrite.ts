@@ -84,7 +84,21 @@ function buildRelayProxy(): Proxy | null {
 	const server = process.env.RELAY_HOST;
 	const username = process.env.RELAY_USERNAME;
 	const password = process.env.RELAY_PASSWORD;
-	if (!server || !username || !password) return null;
+	// All three unset means "relay disabled" (RELAY_PORT alone is ignored); a
+	// partial setup is an operator mistake — fail loudly instead of silently
+	// routing AI traffic without the relay.
+	const missing = ([
+		["RELAY_HOST", server],
+		["RELAY_USERNAME", username],
+		["RELAY_PASSWORD", password],
+	] as const).filter(([, value]) => !value).map(([name]) => name);
+	if (missing.length === 3) return null;
+	if (missing.length > 0) {
+		throw new Error(
+			`Incomplete relay configuration (missing: ${missing.join(", ")}): ` +
+				"set RELAY_HOST, RELAY_USERNAME and RELAY_PASSWORD together, or leave all unset",
+		);
+	}
 
 	const port = Number(process.env.RELAY_PORT || 443);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) {
