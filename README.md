@@ -104,7 +104,8 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
    - `ALLOW_URL_OVERRIDE` — set to `1` to let `?url=<encoded subscription URL>`
      override `SUBSCRIPTION_URL` at request time (the query value wins when the
      flag is on). Off by default: it makes the endpoint fetch whatever URL a
-     token holder supplies, which is an SSRF-ish surface.
+     token holder supplies, which is an SSRF-ish surface. Only http(s) URLs are
+     accepted; anything else is rejected with 400 before fetching.
 3. `vercel deploy --prod`.
 4. Subscribe your client to:
    `https://<your-project>.vercel.app/api/subscribe?token=<SUBSCRIBE_TOKEN>`

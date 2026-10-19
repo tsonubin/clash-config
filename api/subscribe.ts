@@ -70,7 +70,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const allowUrlOverride = process.env.ALLOW_URL_OVERRIDE === "1";
 	const queryUrl = firstQueryValue(req.query.url);
 	// ?url= genuinely overrides when the escape hatch is enabled; without it the
-	// environment is the only source.
+	// environment is the only source. Caller-supplied, so restrict it to http(s):
+	// any other scheme (file:, data:, …) or an unparsable value is rejected
+	// before it can reach fetch.
+	if (allowUrlOverride && queryUrl) {
+		let queryProtocol: string | undefined;
+		try {
+			queryProtocol = new URL(queryUrl).protocol;
+		} catch {
+			queryProtocol = undefined; // unparsable → rejected below
+		}
+		if (queryProtocol !== "http:" && queryProtocol !== "https:") {
+			res.status(400).send("Invalid ?url=: must be an http(s) URL");
+			return;
+		}
+	}
 	const sourceUrl = allowUrlOverride && queryUrl ? queryUrl : configuredUrl;
 
 	if (!sourceUrl) {

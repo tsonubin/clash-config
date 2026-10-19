@@ -152,3 +152,15 @@ test('only GET and HEAD are served', async () => {
   assert.equal(head.statusCode, 200);
  });
 });
+
+test('non-http ?url= values are rejected when the override is enabled', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  process.env.ALLOW_URL_OVERRIDE = '1';
+  for (const url of ['file:///etc/passwd', 'not-a-url']) {
+   const res = mockRes();
+   await handler({ query: { url }, method: 'GET' }, res);
+   assert.equal(res.statusCode, 400, `${url} must be rejected`);
+  }
+  assert.equal(seen.length, 0, 'rejected URLs must not be fetched');
+ });
+});
