@@ -98,14 +98,16 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
    - `REQUIRE_SUBSCRIBE_TOKEN` — set to `1` to fail closed: if
      `SUBSCRIBE_TOKEN` is missing at request time the endpoint returns 503
      instead of silently serving unauthenticated. Recommended in
-     production; unset by default (behavior unchanged).
+     production; unset by default (behavior unchanged). Values must be
+     `0`/`1`; others are refused with 503.
    - `RELAY_HOST` / `RELAY_PORT` / `RELAY_USERNAME` / `RELAY_PASSWORD` —
      optional SOCKS5 relay for AI egress (see below). Omit to disable.
    - `ALLOW_URL_OVERRIDE` — set to `1` to let `?url=<encoded subscription URL>`
      override `SUBSCRIPTION_URL` at request time (the query value wins when the
      flag is on). Off by default: it makes the endpoint fetch whatever URL a
      token holder supplies, which is an SSRF-ish surface. Only http(s) URLs are
-     accepted; anything else is rejected with 400 before fetching.
+     accepted; anything else is rejected with 400 before fetching. Values must
+     be `0`/`1`; others are refused with 503.
 3. `vercel deploy --prod`.
 4. Subscribe your client to:
    `https://<your-project>.vercel.app/api/subscribe?token=<SUBSCRIBE_TOKEN>`
@@ -142,10 +144,12 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 - **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
 - **Endpoint status codes** — `400` no subscription source configured, or an
   invalid `?url=`; `401` missing/incorrect `?token=`; `405` method not GET/HEAD;
-  `502` the upstream subscription was unreachable, oversized (8 MiB cap), or not
-  a usable Clash config (parse errors include line/column); `503`
-  `REQUIRE_SUBSCRIBE_TOKEN=1` with no `SUBSCRIBE_TOKEN` configured. Error detail
-  is in the Vercel logs.
+  `500` operator configuration error (e.g. invalid `RELAY_PORT`); `502` the
+  upstream subscription was unreachable, oversized (8 MiB cap), or not a usable
+  Clash config (parse errors include line/column); `503`
+  `REQUIRE_SUBSCRIBE_TOKEN=1` with no `SUBSCRIBE_TOKEN` configured, or a
+  flag-like env (`REQUIRE_SUBSCRIBE_TOKEN` / `ALLOW_URL_OVERRIDE`) set to
+  something other than 0/1. Error detail is in the Vercel logs.
 
 ## License
 
