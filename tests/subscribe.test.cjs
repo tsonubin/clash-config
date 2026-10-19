@@ -175,3 +175,31 @@ test('YAML parse errors report a line/column position', async () => {
   assert.match(res.body, /line \d+, column \d+/);
  });
 });
+
+test('flag-like env vars accept only 0/1 and junk values fail closed', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  for (const [key, value] of [['REQUIRE_SUBSCRIBE_TOKEN', 'true'], ['ALLOW_URL_OVERRIDE', 'yes']]) {
+   process.env[key] = value;
+   const res = mockRes();
+   await handler({ query: { token: 'anything' }, method: 'GET' }, res);
+   assert.equal(res.statusCode, 503, `${key}=${value} must be refused`);
+   delete process.env[key];
+  }
+  assert.equal(seen.length, 0, 'misconfigured flags must not fetch upstream');
+ });
+});
+
+test('operator configuration errors surface as 500, not upstream 502', async () => {
+ await withUpstream(upstreamOk(), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  Object.assign(process.env, { RELAY_HOST: '203.0.113.10', RELAY_USERNAME: 'u', RELAY_PASSWORD: 'p', RELAY_PORT: 'abc' });
+  try {
+   const res = mockRes();
+   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+   assert.equal(res.statusCode, 500);
+  } finally {
+   for (const key of ['RELAY_HOST', 'RELAY_USERNAME', 'RELAY_PASSWORD', 'RELAY_PORT']) delete process.env[key];
+  }
+ });
+});

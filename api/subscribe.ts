@@ -35,14 +35,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const method = req.method ?? "GET";
 	if (method !== "GET" && method !== "HEAD") {
 		res.setHeader("Allow", "GET, HEAD");
-		res.status(405).send("Method not allowed");
+		res.status(405).send("Method not allowed: use GET or HEAD.");
 		return;
+	}
+	// Flag-like envs accept only 0/1 (or empty). Anything else is a silent
+	// misconfiguration — e.g. REQUIRE_SUBSCRIBE_TOKEN=true would quietly not
+	// fail closed — so refuse to serve instead of guessing.
+	const rawRequireToken = process.env.REQUIRE_SUBSCRIBE_TOKEN;
+	const rawAllowOverride = process.env.ALLOW_URL_OVERRIDE;
+	for (const raw of [rawRequireToken, rawAllowOverride]) {
+		if (raw !== undefined && raw !== "" && raw !== "0" && raw !== "1") {
+			res
+				.status(503)
+				.send("Server misconfigured: REQUIRE_SUBSCRIBE_TOKEN and ALLOW_URL_OVERRIDE must be 0 or 1");
+			return;
+		}
 	}
 	const requiredToken = process.env.SUBSCRIBE_TOKEN;
 	// Opt-in fail-closed: with REQUIRE_SUBSCRIBE_TOKEN=1 a missing SUBSCRIBE_TOKEN
 	// refuses every request instead of silently serving the (credential-bearing)
 	// config unauthenticated. Unset, behavior is unchanged.
-	if (!requiredToken && process.env.REQUIRE_SUBSCRIBE_TOKEN === "1") {
+	if (!requiredToken && rawRequireToken === "1") {
 		res.status(503).send("Server misconfigured: SUBSCRIBE_TOKEN is not set");
 		return;
 	}
@@ -53,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	}
 
 	const configuredUrl = process.env.SUBSCRIPTION_URL;
-	const allowUrlOverride = process.env.ALLOW_URL_OVERRIDE === "1";
+	const allowUrlOverride = rawAllowOverride === "1";
 	const queryUrl = firstQueryValue(req.query.url);
 	// ?url= genuinely overrides when the escape hatch is enabled; without it the
 	// environment is the only source. Caller-supplied, so restrict it to http(s):

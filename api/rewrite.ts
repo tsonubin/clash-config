@@ -88,7 +88,9 @@ function buildRelayProxy(): Proxy | null {
 
 	const port = Number(process.env.RELAY_PORT || 443);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		throw new Error(`Invalid RELAY_PORT: ${process.env.RELAY_PORT}`);
+		throw new Error(
+			`Invalid RELAY_PORT: ${JSON.stringify(process.env.RELAY_PORT)} (expected an integer 1-65535)`,
+		);
 	}
 
 	return {
