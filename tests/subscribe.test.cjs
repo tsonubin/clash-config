@@ -164,3 +164,14 @@ test('non-http ?url= values are rejected when the override is enabled', async ()
   assert.equal(seen.length, 0, 'rejected URLs must not be fetched');
  });
 });
+
+test('YAML parse errors report a line/column position', async () => {
+ await withUpstream(new Response('a: [1\nb: 2', { status: 200 }), async () => {
+  process.env.SUBSCRIBE_TOKEN = 'secret-token';
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 502);
+  assert.match(res.body, /line \d+, column \d+/);
+ });
+});

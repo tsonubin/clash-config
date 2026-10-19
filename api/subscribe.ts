@@ -124,10 +124,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		// not the classic PyYAML arbitrary-object-construction footgun.
 		config = yaml.load(rawYaml) as ClashConfig;
 	} catch (err) {
-		// Parse errors quote the offending YAML; keep those snippets out of the
-		// response body.
+		// Parse errors quote the offending YAML; give the caller only the
+		// position and keep content snippets in the logs.
+		const mark = err instanceof yaml.YAMLException ? err.mark : undefined;
+		const where = mark ? ` (line ${mark.line + 1}, column ${mark.column + 1})` : "";
 		console.error("Upstream subscription is not valid YAML:", err);
-		res.status(502).send("Upstream subscription is not valid YAML");
+		res.status(502).send(`Upstream subscription is not valid YAML${where}`);
 		return;
 	}
 
