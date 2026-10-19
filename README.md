@@ -64,19 +64,20 @@ does not change core runtime behavior.
 Setting `RELAY_HOST` / `RELAY_USERNAME` / `RELAY_PASSWORD` adds a `US-RELAY`
 SOCKS5 proxy and offers it inside the 🤖 AI group, giving AI services a stable
 US egress on demand. The AI group still defaults to **🚀 MANUAL** like every
-other service; pick **🛰 AI-ROUTE** (or `US-RELAY` / **↩ AI-FALLBACK**
-directly) in the AI group when you want the relay:
+other service; pick **🛰 AI-ROUTE** (or `US-RELAY` directly) in the AI group
+when you want the relay:
 
-- **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **↩ AI-FALLBACK**
-  (a `fallback` over the normal nodes) if the relay stops answering
-  healthchecks — so a dead relay degrades instead of black-holing AI traffic.
+- **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **⚡ AUTO** if the
+  relay stops answering healthchecks — so a dead relay degrades instead of
+  black-holing AI traffic. (The former **↩ AI-FALLBACK** group was an exact
+  copy of **⚡ AUTO** and has been collapsed into it.)
 - `US-RELAY` sets `dialer-proxy: ⚡ AUTO`, so it is reached *through* your own
   nodes rather than from the client's raw network. The relay is deliberately
   excluded from `⚡ AUTO`, otherwise that would loop.
 
-All three of host/username/password must be set; otherwise the relay and both
-AI-* groups are omitted and AI traffic uses the normal nodes. Credentials are
-read from the environment because the served config contains them in
+All three of host/username/password must be set; otherwise the relay and the
+🛰 AI-ROUTE group are omitted and AI traffic uses the normal nodes. Credentials
+are read from the environment because the served config contains them in
 plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 
 ### Deploy
@@ -119,8 +120,8 @@ vercel dev          # requires the Vercel CLI; reads .env.local
   defaults to MANUAL, with GLOBAL / AUTO / DIRECT selectable.
 - **Service groups** (AI, Steam, Google, …) — default to MANUAL; switch any one
   of them to AUTO, GLOBAL, a specific node, or DIRECT independently.
-- **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` / ↩ AI-FALLBACK when
-  the relay env is configured.
+- **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` when the relay env
+  is configured.
 
 ## Troubleshooting
 

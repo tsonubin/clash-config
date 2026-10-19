@@ -45,7 +45,6 @@ export const GROUP = {
 	AUTO: "⚡ AUTO",
 	AI: "🤖 AI",
 	AI_ROUTE: "🛰 AI-ROUTE",
-	AI_FALLBACK: "↩ AI-FALLBACK",
 	STEAM: "🎮 Steam",
 	GOOGLE: "🔍 Google",
 	YOUTUBE: "▶️ YouTube",
@@ -270,7 +269,7 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	// Relay routes are offered inside the AI group (after the shared selectors,
 	// before the raw nodes) so the US egress remains one click away without
 	// being the default.
-	const aiRelayOptions = hasRelay ? [GROUP.AI_ROUTE, RELAY_NAME, GROUP.AI_FALLBACK] : [];
+	const aiRelayOptions = hasRelay ? [GROUP.AI_ROUTE, RELAY_NAME] : [];
 
 	const groups: ProxyGroup[] = [
 		{ name: GROUP.MANUAL, type: "select", proxies: [GROUP.AUTO, ...nodes] },
@@ -291,27 +290,17 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	];
 
 	if (hasRelay) {
-		groups.push(
-			{
-				// Relay first; if it stops answering the healthcheck, traffic moves
-				// to the plain nodes instead of black-holing.
-				name: GROUP.AI_ROUTE,
-				type: "fallback",
-				proxies: [RELAY_NAME, GROUP.AI_FALLBACK],
-				url: HEALTHCHECK_URL,
-				interval: 60,
-				lazy: false,
-			},
-			{
-				name: GROUP.AI_FALLBACK,
-				type: "fallback",
-				proxies: automaticNodes,
-				url: HEALTHCHECK_URL,
-				interval: 60,
-				timeout: 5000,
-				lazy: false,
-			},
-		);
+		groups.push({
+			// Relay first; if it stops answering the healthcheck, traffic falls
+			// back to AUTO — the same health-checked node set a dedicated fallback
+			// group would hold — instead of black-holing.
+			name: GROUP.AI_ROUTE,
+			type: "fallback",
+			proxies: [RELAY_NAME, GROUP.AUTO],
+			url: HEALTHCHECK_URL,
+			interval: 60,
+			lazy: false,
+		});
 	}
 
 	for (const service of SERVICES) {
