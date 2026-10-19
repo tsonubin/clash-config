@@ -9,7 +9,7 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "tsc --noEmit false --rootDir . --outDir .test-build && node --test tests/*.test.cjs"
+		"test": "tsc -p tsconfig.test.json && node --test tests/*.test.cjs"
 	},
 	"dependencies": {
 		"js-yaml": "^4.1.0"
