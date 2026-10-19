@@ -1,8 +1,17 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { createHash, timingSafeEqual } from "node:crypto";
 import yaml from "js-yaml";
 import { rewrite, UpstreamConfigError, type ClashConfig } from "./rewrite.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
+
+// Fixed-length, non-early-exit comparison so the token check cannot be probed
+// byte-by-byte through response timing.
+function secretEqual(a: string, b: string): boolean {
+	const ha = createHash("sha256").update(a).digest();
+	const hb = createHash("sha256").update(b).digest();
+	return timingSafeEqual(ha, hb);
+}
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {
 	return Array.isArray(value) ? value[0] : value;
@@ -29,7 +38,7 @@ async function fetchUpstream(url: string): Promise<Response> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const requiredToken = process.env.SUBSCRIBE_TOKEN;
 	const providedToken = firstQueryValue(req.query.token);
-	if (requiredToken && providedToken !== requiredToken) {
+	if (requiredToken && !secretEqual(providedToken ?? "", requiredToken)) {
 		res.status(401).send("Unauthorized: missing or incorrect ?token=");
 		return;
 	}
