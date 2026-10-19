@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const handler = require('../.test-build/api/subscribe.js').default;
 
 const UPSTREAM_YAML = 'proxies:\n  - name: Node1\n    type: ss\n    server: example.com\n    port: 443\n';
-const ENV_KEYS = ['SUBSCRIBE_TOKEN', 'SUBSCRIPTION_URL', 'ALLOW_URL_OVERRIDE'];
+const ENV_KEYS = ['SUBSCRIBE_TOKEN', 'SUBSCRIPTION_URL', 'ALLOW_URL_OVERRIDE', 'REQUIRE_SUBSCRIBE_TOKEN'];
 
 function mockRes() {
  return {
@@ -105,5 +105,21 @@ test('?url= overrides SUBSCRIPTION_URL only when ALLOW_URL_OVERRIDE=1', async ()
   await handler({ query: { token: 'secret-token', url: 'https://alt.example/other' }, method: 'GET' }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(seen.at(-1), 'https://up.example/configured');
+ });
+});
+
+test('REQUIRE_SUBSCRIBE_TOKEN fails closed on a missing token without breaking the default', async () => {
+ await withUpstream(upstreamOk(), async (seen) => {
+  process.env.REQUIRE_SUBSCRIBE_TOKEN = '1';
+  const res = mockRes();
+  await handler({ query: { token: 'anything' }, method: 'GET' }, res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(seen.length, 0, 'upstream must not be fetched');
+
+  delete process.env.REQUIRE_SUBSCRIBE_TOKEN;
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const open = mockRes();
+  await handler({ query: {}, method: 'GET' }, open);
+  assert.equal(open.statusCode, 200, 'default stays open when no token is configured');
  });
 });

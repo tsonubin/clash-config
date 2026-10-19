@@ -37,6 +37,13 @@ async function fetchUpstream(url: string): Promise<Response> {
 // sniffer sections and does not depend on client-side override toggles.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	const requiredToken = process.env.SUBSCRIBE_TOKEN;
+	// Opt-in fail-closed: with REQUIRE_SUBSCRIBE_TOKEN=1 a missing SUBSCRIBE_TOKEN
+	// refuses every request instead of silently serving the (credential-bearing)
+	// config unauthenticated. Unset, behavior is unchanged.
+	if (!requiredToken && process.env.REQUIRE_SUBSCRIBE_TOKEN === "1") {
+		res.status(503).send("Server misconfigured: SUBSCRIBE_TOKEN is not set");
+		return;
+	}
 	const providedToken = firstQueryValue(req.query.token);
 	if (requiredToken && !secretEqual(providedToken ?? "", requiredToken)) {
 		res.status(401).send("Unauthorized: missing or incorrect ?token=");

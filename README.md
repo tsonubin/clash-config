@@ -89,6 +89,10 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
    - `SUBSCRIBE_TOKEN` — a shared secret required as `?token=` on the
      endpoint, so the deployed URL can't be scraped for your relay
      credentials by anyone who finds it (`openssl rand -hex 24`).
+   - `REQUIRE_SUBSCRIBE_TOKEN` — set to `1` to fail closed: if
+     `SUBSCRIBE_TOKEN` is missing at request time the endpoint returns 503
+     instead of silently serving unauthenticated. Recommended in
+     production; unset by default (behavior unchanged).
    - `RELAY_HOST` / `RELAY_PORT` / `RELAY_USERNAME` / `RELAY_PASSWORD` —
      optional SOCKS5 relay for AI egress (see below). Omit to disable.
 3. `vercel deploy --prod`.
