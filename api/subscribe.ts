@@ -25,20 +25,6 @@ function firstQueryValue(value: string | string[] | undefined): string | undefin
 	return Array.isArray(value) ? value[0] : value;
 }
 
-async function fetchUpstream(url: string): Promise<Response> {
-	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-	try {
-		return await fetch(url, {
-			headers: { "User-Agent": "ClashX/1.95.1 clash-verge/mihomo" },
-			signal: controller.signal,
-		});
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
 // Fetches the upstream subscription and rewrites it server-side, so any
 // Clash-compatible client (Stash, mihomo, Verge) can subscribe to the result
 // directly. The emitted config is self-contained: it carries its own DNS and
@@ -99,8 +85,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 	let upstream: Response;
 	let rawYaml: string;
+	// The abort timer spans fetch *and* body read: clearing it once headers
+	// arrive would let a slow-drip body hang the function indefinitely.
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 	try {
-		upstream = await fetchUpstream(sourceUrl);
+		upstream = await fetch(sourceUrl, {
+			headers: { "User-Agent": "ClashX/1.95.1 clash-verge/mihomo" },
+			signal: controller.signal,
+		});
 		if (!upstream.ok) {
 			res.status(502).send(`Upstream subscription returned HTTP ${upstream.status}`);
 			return;
@@ -120,6 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 		console.error("Upstream subscription fetch failed:", err);
 		res.status(502).send("Upstream subscription fetch failed");
 		return;
+	} finally {
+		clearTimeout(timer);
 	}
 
 	let config: ClashConfig;
