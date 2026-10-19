@@ -129,3 +129,9 @@ vercel dev          # requires the Vercel CLI; reads .env.local
 - **Service not proxying** — set that service's group back to **🚀 MANUAL** in the proxy panel, and check MANUAL points at **⚡ AUTO** or a working node. A remembered selection from an older config can override the defaults.
 - **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
 - **`[Provider] slack pull error: 400 Bad Request`** — caused by a double slash in the blackmatrix7 ruleset URL. This is handled correctly in the current code.
+
+## License
+
+UNLICENSED — all rights reserved. The source is published for reference only;
+no use, modification, or distribution rights are granted. See
+[`LICENSE`](LICENSE).
