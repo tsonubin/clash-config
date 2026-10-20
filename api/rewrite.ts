@@ -10,6 +10,10 @@
 
 export type ClashConfig = Record<string, unknown>;
 
+// Thrown for problems with the upstream subscription's content, which the
+// endpoint reports as 502; anything else is an operator/config error (500).
+export class UpstreamConfigError extends Error {}
+
 interface Proxy {
 	name: string;
 	[key: string]: unknown;
@@ -41,7 +45,6 @@ export const GROUP = {
 	AUTO: "⚡ AUTO",
 	AI: "🤖 AI",
 	AI_ROUTE: "🛰 AI-ROUTE",
-	AI_FALLBACK: "↩ AI-FALLBACK",
 	STEAM: "🎮 Steam",
 	GOOGLE: "🔍 Google",
 	YOUTUBE: "▶️ YouTube",
@@ -81,11 +84,27 @@ function buildRelayProxy(): Proxy | null {
 	const server = process.env.RELAY_HOST;
 	const username = process.env.RELAY_USERNAME;
 	const password = process.env.RELAY_PASSWORD;
-	if (!server || !username || !password) return null;
+	// All three unset means "relay disabled" (RELAY_PORT alone is ignored); a
+	// partial setup is an operator mistake — fail loudly instead of silently
+	// routing AI traffic without the relay.
+	const missing = ([
+		["RELAY_HOST", server],
+		["RELAY_USERNAME", username],
+		["RELAY_PASSWORD", password],
+	] as const).filter(([, value]) => !value).map(([name]) => name);
+	if (missing.length === 3) return null;
+	if (missing.length > 0) {
+		throw new Error(
+			`Incomplete relay configuration (missing: ${missing.join(", ")}): ` +
+				"set RELAY_HOST, RELAY_USERNAME and RELAY_PASSWORD together, or leave all unset",
+		);
+	}
 
-	const port = Number(process.env.RELAY_PORT ?? 443);
+	const port = Number(process.env.RELAY_PORT || 443);
 	if (!Number.isInteger(port) || port < 1 || port > 65535) {
-		throw new Error(`Invalid RELAY_PORT: ${process.env.RELAY_PORT}`);
+		throw new Error(
+			`Invalid RELAY_PORT: ${JSON.stringify(process.env.RELAY_PORT)} (expected an integer 1-65535)`,
+		);
 	}
 
 	return {
@@ -147,8 +166,9 @@ function buildRuleProviders(): Record<string, RuleProvider> {
 	};
 }
 
-// Domains worth pinning directly, either because the ruleset misses them or
-// because a broader reject list would otherwise swallow them.
+// Domains worth pinning directly because the service rulesets miss them. These
+// pins do NOT rescue anything the reject list matches: `RULE-SET,reject,REJECT`
+// is evaluated before them (see buildRules), so the reject list wins.
 const AI_SUFFIXES = [
 	"claude.com",
 	"claude.ai",
@@ -235,11 +255,22 @@ const SERVICES: ServiceDef[] = [
 	{ group: GROUP.DEVELOPER, ruleSets: ["github"], suffixes: DEVELOPER_SUFFIXES },
 ];
 
-function proxyNames(config: ClashConfig): string[] {
-	const proxies = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
-	return proxies
-		.map((p) => p?.name)
-		.filter((name): name is string => typeof name === "string" && name.length > 0);
+// A malformed or duplicated entry would surface as a broken group member or a
+// client-side "duplicate proxy" error, so keep only the first valid entry per
+// name; an all-junk subscription then falls through to the clean "no proxies"
+// error below.
+function normalizeProxies(raw: unknown): Proxy[] {
+	const seen = new Set<string>();
+	const out: Proxy[] = [];
+	for (const entry of Array.isArray(raw) ? (raw as unknown[]) : []) {
+		if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+		const p = entry as Proxy;
+		if (typeof p.name !== "string" || p.name.length === 0 || typeof p.type !== "string") continue;
+		if (seen.has(p.name)) continue;
+		seen.add(p.name);
+		out.push(p);
+	}
+	return out;
 }
 
 function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: boolean): ProxyGroup[] {
@@ -255,7 +286,7 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	// Relay routes are offered inside the AI group (after the shared selectors,
 	// before the raw nodes) so the US egress remains one click away without
 	// being the default.
-	const aiRelayOptions = hasRelay ? [GROUP.AI_ROUTE, RELAY_NAME, GROUP.AI_FALLBACK] : [];
+	const aiRelayOptions = hasRelay ? [GROUP.AI_ROUTE, RELAY_NAME] : [];
 
 	const groups: ProxyGroup[] = [
 		{ name: GROUP.MANUAL, type: "select", proxies: [GROUP.AUTO, ...nodes] },
@@ -276,27 +307,17 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 	];
 
 	if (hasRelay) {
-		groups.push(
-			{
-				// Relay first; if it stops answering the healthcheck, traffic moves
-				// to the plain nodes instead of black-holing.
-				name: GROUP.AI_ROUTE,
-				type: "fallback",
-				proxies: [RELAY_NAME, GROUP.AI_FALLBACK],
-				url: HEALTHCHECK_URL,
-				interval: 60,
-				lazy: false,
-			},
-			{
-				name: GROUP.AI_FALLBACK,
-				type: "fallback",
-				proxies: automaticNodes,
-				url: HEALTHCHECK_URL,
-				interval: 60,
-				timeout: 5000,
-				lazy: false,
-			},
-		);
+		groups.push({
+			// Relay first; if it stops answering the healthcheck, traffic falls
+			// back to AUTO — the same health-checked node set a dedicated fallback
+			// group would hold — instead of black-holing.
+			name: GROUP.AI_ROUTE,
+			type: "fallback",
+			proxies: [RELAY_NAME, GROUP.AUTO],
+			url: HEALTHCHECK_URL,
+			interval: 60,
+			lazy: false,
+		});
 	}
 
 	for (const service of SERVICES) {
@@ -328,9 +349,11 @@ function buildProxyGroups(nodes: string[], automaticNodes: string[], hasRelay: b
 function buildRules(): string[] {
 	const rules: string[] = [];
 
-	// Order matters: private/LAN first, then explicit service matches, then the
-	// broad China-direct sets, then FINAL. Ads are rejected before services so a
-	// tracker on a proxied domain still dies.
+	// Order matters: private/LAN first, then the reject list, then explicit
+	// service matches, then the broad China-direct sets, then FINAL. Ads are
+	// rejected before services so a tracker on a proxied domain still dies; the
+	// deliberate tradeoff is that the reject list beats every service pin below
+	// it, including the pinned suffix lists in SERVICES.
 	rules.push(
 		"RULE-SET,private,DIRECT",
 		"DOMAIN-SUFFIX,local,DIRECT",
@@ -424,11 +447,14 @@ function dedupe(items: string[]): string[] {
 }
 
 export function rewrite(config: ClashConfig): ClashConfig {
+	if (config === null || typeof config !== "object" || Array.isArray(config)) {
+		throw new UpstreamConfigError("Upstream subscription is not a Clash config");
+	}
 	// Computed before the relay is appended, so the relay never becomes a member
 	// of AUTO — which its own dialer-proxy points at.
-	const upstream = Array.isArray(config.proxies) ? (config.proxies as Proxy[]) : [];
+	const upstream = normalizeProxies(config.proxies);
 	const rank: Record<string, number> = { hysteria2: 0, ss: 1, vless: 2, anytls: 3 };
-	const ordered = upstream.filter((p) => p?.name !== RELAY_NAME).sort(
+	const ordered = upstream.filter((p) => p.name !== RELAY_NAME).sort(
 		(a, b) => (rank[String(a.type)] ?? 2) - (rank[String(b.type)] ?? 2),
 	);
 	config.proxies = ordered.map((p) => {
@@ -436,13 +462,13 @@ export function rewrite(config: ClashConfig): ClashConfig {
 		return ip ? { ...p, server: ip } : p;
 	});
 	config.hosts = { ...(config.hosts as Record<string, unknown> ?? {}), ...SERVER_HOSTS };
-	const nodes = proxyNames(config);
+	const nodes = ordered.map((p) => p.name);
 	// AnyTLS showed repeated TLS resets on this route; retain it for explicit
 	// manual use, but do not allow automatic selection to pick it.
 	const automaticNodes = ordered.filter((p) => p.type !== "anytls").map((p) => p.name);
 	if (automaticNodes.length === 0) automaticNodes.push(...nodes);
 	if (nodes.length === 0) {
-		throw new Error("No proxies found in upstream subscription");
+		throw new UpstreamConfigError("No proxies found in upstream subscription");
 	}
 
 	const relay = buildRelayProxy();

@@ -22,6 +22,9 @@ The generated config is **self-contained**. It carries its own `dns` and
 Clash Party's DNS Override / sniff override sidebar switches), so it works
 as-is in Stash, mihomo, and Clash Verge.
 
+Responses are never cached (`Cache-Control: private, no-store`): successful
+bodies carry relay credentials, so no CDN or proxy may keep a copy.
+
 All proxy-needing groups (🌍 GLOBAL, 🐟 FINAL, and every service group except
 🍎 Apple) default to **🚀 MANUAL**. MANUAL lists **⚡ AUTO** first, followed by each
 individual node, so a single selection in MANUAL steers every service: leave
@@ -64,18 +67,21 @@ does not change core runtime behavior.
 Setting `RELAY_HOST` / `RELAY_USERNAME` / `RELAY_PASSWORD` adds a `US-RELAY`
 SOCKS5 proxy and offers it inside the 🤖 AI group, giving AI services a stable
 US egress on demand. The AI group still defaults to **🚀 MANUAL** like every
-other service; pick **🛰 AI-ROUTE** (or `US-RELAY` / **↩ AI-FALLBACK**
-directly) in the AI group when you want the relay:
+other service; pick **🛰 AI-ROUTE** (or `US-RELAY` directly) in the AI group
+when you want the relay:
 
-- **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **↩ AI-FALLBACK**
-  (a `fallback` over the normal nodes) if the relay stops answering
-  healthchecks — so a dead relay degrades instead of black-holing AI traffic.
+- **🛰 AI-ROUTE** (`fallback`) tries `US-RELAY` first, then **⚡ AUTO** if the
+  relay stops answering healthchecks — so a dead relay degrades instead of
+  black-holing AI traffic. (The former **↩ AI-FALLBACK** group was an exact
+  copy of **⚡ AUTO** and has been collapsed into it.)
 - `US-RELAY` sets `dialer-proxy: ⚡ AUTO`, so it is reached *through* your own
   nodes rather than from the client's raw network. The relay is deliberately
   excluded from `⚡ AUTO`, otherwise that would loop.
 
-All three of host/username/password must be set; otherwise the relay and both
-AI-* groups are omitted and AI traffic uses the normal nodes. Credentials are
+All three of host/username/password must be set together — a partial setup is
+refused with 500 naming the missing variable — or left unset to disable the
+relay entirely, in which case the 🛰 AI-ROUTE group is omitted and AI traffic
+uses the normal nodes. Credentials are
 read from the environment because the served config contains them in
 plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 
@@ -85,22 +91,35 @@ plaintext — which is what `SUBSCRIBE_TOKEN` guards.
 2. Set environment variables (`vercel env add <NAME>` or via the dashboard) —
    see [`.env.example`](.env.example) for the full list:
    - `SUBSCRIPTION_URL` — your upstream subscription URL. Keep this
-     server-side only; it's typically a credential.
+     server-side only; it's typically a credential. Must be an http(s) URL.
    - `SUBSCRIBE_TOKEN` — a shared secret required as `?token=` on the
      endpoint, so the deployed URL can't be scraped for your relay
      credentials by anyone who finds it (`openssl rand -hex 24`).
+   - `REQUIRE_SUBSCRIBE_TOKEN` — set to `1` to fail closed: if
+     `SUBSCRIBE_TOKEN` is missing at request time the endpoint returns 503
+     instead of silently serving unauthenticated. Recommended in
+     production; unset by default (behavior unchanged). Values must be
+     `0`/`1`; others are refused with 503.
    - `RELAY_HOST` / `RELAY_PORT` / `RELAY_USERNAME` / `RELAY_PASSWORD` —
      optional SOCKS5 relay for AI egress (see below). Omit to disable.
+   - `ALLOW_URL_OVERRIDE` — set to `1` to let `?url=<encoded subscription URL>`
+     override `SUBSCRIPTION_URL` at request time (the query value wins when the
+     flag is on). Off by default: it makes the endpoint fetch whatever URL a
+     token holder supplies, which is an SSRF-ish surface. Only http(s) URLs are
+     accepted; anything else is rejected with 400 before fetching. Values must
+     be `0`/`1`; others are refused with 503.
 3. `vercel deploy --prod`.
 4. Subscribe your client to:
    `https://<your-project>.vercel.app/api/subscribe?token=<SUBSCRIBE_TOKEN>`
 
 ### Local development
 
+Node 20 or newer (CI runs Node 20; `engines` requires ≥20).
+
 ```bash
 npm install
 npm run typecheck   # tsc --noEmit
-npm test            # subscription routing regressions
+npm test            # compiles api/ to .test-build/ (tsconfig.test.json), then runs tests/
 vercel dev          # requires the Vercel CLI; reads .env.local
 ```
 
@@ -115,12 +134,26 @@ vercel dev          # requires the Vercel CLI; reads .env.local
   defaults to MANUAL, with GLOBAL / AUTO / DIRECT selectable.
 - **Service groups** (AI, Steam, Google, …) — default to MANUAL; switch any one
   of them to AUTO, GLOBAL, a specific node, or DIRECT independently.
-- **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` / ↩ AI-FALLBACK when
-  the relay env is configured.
+- **🤖 AI** — additionally offers 🛰 AI-ROUTE / `US-RELAY` when the relay env
+  is configured.
 
 ## Troubleshooting
 
 - **No proxies found** — ensure your upstream subscription has at least one proxy node.
 - **Service not proxying** — set that service's group back to **🚀 MANUAL** in the proxy panel, and check MANUAL points at **⚡ AUTO** or a working node. A remembered selection from an older config can override the defaults.
-- **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. If any are missing, the relay is omitted entirely.
-- **`[Provider] slack pull error: 400 Bad Request`** — caused by a double slash in the blackmatrix7 ruleset URL. This is handled correctly in the current code.
+- **AI relay not working** — verify `RELAY_HOST`, `RELAY_USERNAME`, and `RELAY_PASSWORD` are all set. A partial setup is refused with 500 (naming the missing variable); all three unset disables the relay entirely.
+- **Endpoint status codes** — `400` no subscription source configured, or an
+  invalid `?url=`; `401` missing/incorrect `?token=`; `405` method not GET/HEAD;
+  `500` operator configuration error (e.g. invalid `RELAY_PORT` or
+  `SUBSCRIPTION_URL`); `502` the
+  upstream subscription was unreachable, oversized (8 MiB cap), or not a usable
+  Clash config (parse errors include line/column); `503`
+  `REQUIRE_SUBSCRIBE_TOKEN=1` with no `SUBSCRIBE_TOKEN` configured, or a
+  flag-like env (`REQUIRE_SUBSCRIBE_TOKEN` / `ALLOW_URL_OVERRIDE`) set to
+  something other than 0/1. Error detail is in the Vercel logs.
+
+## License
+
+UNLICENSED — all rights reserved. The source is published for reference only;
+no use, modification, or distribution rights are granted. See
+[`LICENSE`](LICENSE).

@@ -62,9 +62,9 @@ test('foreign DNS travels through the proxy without depending on proxy-host DNS'
  const c=rewrite(fixture());assert.ok(c.dns.nameserver.every(x=>x.endsWith('#'+GROUP.AUTO)));
  assert.ok(c.dns['proxy-server-nameserver'].every(x=>!x.includes('#')));
 });
-test('AI relay remains outside its own dialer group and retains fallback', () => {
+test('AI relay stays outside AUTO and AI-ROUTE falls back to AUTO', () => {
  Object.assign(process.env,{RELAY_HOST:'203.0.113.10',RELAY_USERNAME:'test-user',RELAY_PASSWORD:'test-password'});
- try { const c=rewrite(fixture()),g=c['proxy-groups'];assert.ok(!g.find(x=>x.name===GROUP.AUTO).proxies.includes('US-RELAY'));assert.equal(c.proxies.find(x=>x.name==='US-RELAY')['dialer-proxy'],GROUP.AUTO);assert.deepEqual(g.find(x=>x.name===GROUP.AI_ROUTE).proxies,['US-RELAY',GROUP.AI_FALLBACK]);assert.deepEqual(g.find(x=>x.name===GROUP.AI_FALLBACK).proxies,['Hysteria2','Ss2022','Reality']); }
+ try { const c=rewrite(fixture()),g=c['proxy-groups'];assert.ok(!g.find(x=>x.name===GROUP.AUTO).proxies.includes('US-RELAY'));assert.equal(c.proxies.find(x=>x.name==='US-RELAY')['dialer-proxy'],GROUP.AUTO);assert.deepEqual(g.find(x=>x.name===GROUP.AI_ROUTE).proxies,['US-RELAY',GROUP.AUTO]); }
  finally {delete process.env.RELAY_HOST;delete process.env.RELAY_USERNAME;delete process.env.RELAY_PASSWORD;}
 });
 test('AI group defaults to MANUAL but still offers the relay routes when configured', () => {
@@ -72,13 +72,13 @@ test('AI group defaults to MANUAL but still offers the relay routes when configu
  try {
   const g=rewrite(fixture())['proxy-groups'];const ai=g.find(x=>x.name===GROUP.AI);
   assert.equal(ai.proxies[0],GROUP.MANUAL);
-  for(const member of [GROUP.AI_ROUTE,'US-RELAY',GROUP.AI_FALLBACK]) assert.ok(ai.proxies.includes(member),`AI should offer ${member}`);
+  for(const member of [GROUP.AI_ROUTE,'US-RELAY']) assert.ok(ai.proxies.includes(member),`AI should offer ${member}`);
   for(const name of [GROUP.GLOBAL,GROUP.GOOGLE,GROUP.STEAM]) assert.ok(!g.find(x=>x.name===name).proxies.includes(GROUP.AI_ROUTE),`${name} should not carry AI relay routes`);
  } finally {delete process.env.RELAY_HOST;delete process.env.RELAY_USERNAME;delete process.env.RELAY_PASSWORD;}
  const g=rewrite(fixture())['proxy-groups'];const ai=g.find(x=>x.name===GROUP.AI);
  assert.equal(ai.proxies[0],GROUP.MANUAL);
- for(const member of [GROUP.AI_ROUTE,'US-RELAY',GROUP.AI_FALLBACK]) assert.ok(!ai.proxies.includes(member),`AI should omit ${member} without relay env`);
- assert.ok(!g.some(x=>x.name===GROUP.AI_ROUTE||x.name===GROUP.AI_FALLBACK));
+ for(const member of [GROUP.AI_ROUTE,'US-RELAY']) assert.ok(!ai.proxies.includes(member),`AI should omit ${member} without relay env`);
+ assert.ok(!g.some(x=>x.name===GROUP.AI_ROUTE));
 });
 test('Steam routes community and client traffic to Steam group while downloads go direct', () => {
  const c = rewrite(fixture());
@@ -116,4 +116,16 @@ test('Steam routes community and client traffic to Steam group while downloads g
  // Download direct rules must precede steam ruleset
  assert.ok(downloadAkamaiIndex < steamRulesetIndex, 'download direct rules must precede steam proxy ruleset');
  assert.ok(steamcnIndex < steamRulesetIndex, 'steamcn direct ruleset must precede steam proxy ruleset');
+});
+test('malformed upstream entries cannot reach the emitted config', () => {
+ const c = rewrite({ proxies: [
+  null, 'junk', { type: 'ss', server: 'x', port: 1 },
+  { name: 'A', type: 'ss', server: 'x', port: 1 },
+  { name: 'A', type: 'ss', server: 'y', port: 2 },
+  { name: 'B', type: 'hysteria2', server: 'z', port: 3 },
+ ]});
+ assert.deepEqual(c.proxies.map(p => p.name), ['B', 'A']);
+ assert.deepEqual(c['proxy-groups'].find(g => g.name === GROUP.AUTO).proxies, ['B', 'A']);
+ assert.throws(() => rewrite({ proxies: [null, {}] }), /No proxies found/);
+ assert.throws(() => rewrite('not-a-config'), /not a Clash config/);
 });

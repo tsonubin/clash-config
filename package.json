@@ -1,14 +1,15 @@
 {
 	"name": "clash-config-subscription",
 	"private": true,
+	"license": "UNLICENSED",
 	"version": "1.0.0",
   "description": "Vercel endpoint that fetches an upstream Clash subscription and rewrites it server-side.",
 	"engines": {
-		"node": ">=18"
+		"node": ">=20"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "tsc --noEmit false --rootDir . --outDir .test-build && node --test tests/*.test.cjs"
+		"test": "tsc -p tsconfig.test.json && node --test tests/*.test.cjs"
 	},
 	"dependencies": {
 		"js-yaml": "^4.1.0"
