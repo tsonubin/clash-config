@@ -22,10 +22,8 @@ The generated config is **self-contained**. It carries its own `dns` and
 Clash Party's DNS Override / sniff override sidebar switches), so it works
 as-is in Stash, mihomo, and Clash Verge.
 
-Successful responses are cached at the CDN for 60 seconds
-(`s-maxage=60, stale-while-revalidate=600`) so client refreshes don't hammer
-the upstream subscription; error responses are never cached. `?token=` is part
-of the URL and therefore of the cache key.
+Responses are never cached (`Cache-Control: private, no-store`): successful
+bodies carry relay credentials, so no CDN or proxy may keep a copy.
 
 All proxy-needing groups (🌍 GLOBAL, 🐟 FINAL, and every service group except
 🍎 Apple) default to **🚀 MANUAL**. MANUAL lists **⚡ AUTO** first, followed by each

@@ -7,11 +7,9 @@ const FETCH_TIMEOUT_MS = 15_000;
 // Subscriptions are small (well under 1 MiB); the cap only bounds memory and
 // YAML parse cost against a broken or hostile upstream.
 const MAX_UPSTREAM_BYTES = 8 * 1024 * 1024;
-// Successful responses may sit in a shared cache for a minute (refreshed in the
-// background for 10 more) so client refreshes don't hammer the upstream
-// subscription. The token is part of the URL, hence part of the cache key; only
-// callers who could fetch the body anyway can hit a cached copy.
-const SUCCESS_CACHE_CONTROL = "public, s-maxage=60, stale-while-revalidate=600";
+// The body carries relay credentials, so no shared or browser cache may keep
+// a copy: a token in the URL does not stop a CDN or proxy from storing it.
+const SUCCESS_CACHE_CONTROL = "private, no-store";
 
 // Fixed-length, non-early-exit comparison so the token check cannot be probed
 // byte-by-byte through response timing.
@@ -30,7 +28,7 @@ function firstQueryValue(value: string | string[] | undefined): string | undefin
 // directly. The emitted config is self-contained: it carries its own DNS and
 // sniffer sections and does not depend on client-side override toggles.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-	// Errors are never cached; the success path opts into the CDN cache below.
+	// Nothing is cached: errors are transient and successes carry credentials.
 	res.setHeader("Cache-Control", "no-store");
 	const method = req.method ?? "GET";
 	if (method !== "GET" && method !== "HEAD") {

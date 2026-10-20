@@ -60,7 +60,7 @@ test('serves rewritten config and passes through subscription-userinfo', async (
   await handler({ query: { token: 'secret-token' }, method: 'GET' }, res);
   assert.equal(res.statusCode, 200);
   assert.match(res.headers['Content-Type'], /text\/yaml/);
-  assert.match(res.headers['Cache-Control'], /s-maxage=60/, 'success responses are CDN-cacheable');
+  assert.equal(res.headers['Cache-Control'], 'private, no-store', 'credential-bearing bodies must not be cached');
   assert.equal(res.headers['subscription-userinfo'], 'upload=1; total=2');
   assert.match(res.body, /proxy-groups:/);
   assert.match(res.body, /Node1/);
