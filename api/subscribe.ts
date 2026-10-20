@@ -19,6 +19,26 @@ function secretEqual(a: string, b: string): boolean {
 	return timingSafeEqual(ha, hb);
 }
 
+// Reads the body as UTF-8, returning undefined once more than `limit` bytes
+// arrive (the rest of the stream is cancelled, never buffered).
+async function readCapped(response: Response, limit: number): Promise<string | undefined> {
+	if (!response.body) return "";
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		total += value.byteLength;
+		if (total > limit) {
+			void reader.cancel().catch(() => {});
+			return undefined;
+		}
+		chunks.push(value);
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
+
 function firstQueryValue(value: string | string[] | undefined): string | undefined {
 	return Array.isArray(value) ? value[0] : value;
 }
@@ -121,11 +141,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 			res.status(502).send("Upstream subscription is too large");
 			return;
 		}
-		rawYaml = await upstream.text();
-		if (rawYaml.length > MAX_UPSTREAM_BYTES) {
+		// Content-Length can be absent (chunked) or understated, so count bytes
+		// while streaming and stop as soon as the cap is crossed.
+		const body = await readCapped(upstream, MAX_UPSTREAM_BYTES);
+		if (body === undefined) {
+			controller.abort();
 			res.status(502).send("Upstream subscription is too large");
 			return;
 		}
+		rawYaml = body;
 	} catch (err) {
 		// Detail stays in the logs: fetch errors can name the upstream URL.
 		console.error("Upstream subscription fetch failed:", err);

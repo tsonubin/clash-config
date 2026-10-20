@@ -239,7 +239,7 @@ test('malformed upstream passthrough headers are dropped, not fatal', async () =
   ok: true,
   status: 200,
   headers: { get: (name) => name === 'subscription-userinfo' ? bad : null },
-  text: async () => UPSTREAM_YAML,
+  body: new Response(UPSTREAM_YAML).body,
  };
  await withUpstream(fake, async () => {
   process.env.SUBSCRIBE_TOKEN = 'secret-token';
@@ -249,5 +249,19 @@ test('malformed upstream passthrough headers are dropped, not fatal', async () =
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /proxy-groups:/);
   assert.equal(res.headers['subscription-userinfo'], undefined);
+ });
+});
+
+test('chunked upstream bodies over the cap are rejected while streaming', async () => {
+ const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+ let pulled = 0;
+ const stream = new ReadableStream({ pull(c) { pulled++; c.enqueue(chunk); } });
+ await withUpstream(new Response(stream, { status: 200 }), async () => {
+  process.env.SUBSCRIPTION_URL = 'https://up.example/sub';
+  const res = mockRes();
+  await handler({ query: {}, method: 'GET' }, res);
+  assert.equal(res.statusCode, 502);
+  assert.match(res.body, /too large/);
+  assert.ok(pulled <= 16, `stream read stopped near the cap (pulled ${pulled} MiB)`);
  });
 });
